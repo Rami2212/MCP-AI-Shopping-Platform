@@ -1,5 +1,5 @@
 import { KaprukaGenieApp } from "@/kapruka-genie/KaprukaGenieApp";
 
-export default function Home() {
+export default function AiChatbotPage() {
   return <KaprukaGenieApp />;
 }

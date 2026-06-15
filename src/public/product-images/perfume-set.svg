@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-labelledby="title desc">
+  <title id="title">Signature perfume set</title>
+  <desc id="desc">Two luxury perfume bottles in gift packaging.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ece8ff"/>
+      <stop offset="1" stop-color="#fff2de"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c7f0e2"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#bg)"/>
+  <rect x="78" y="62" width="76" height="82" rx="17" fill="url(#glass)" stroke="#3f246d" stroke-width="6"/>
+  <rect x="169" y="50" width="72" height="94" rx="18" fill="#fff7d7" stroke="#3f246d" stroke-width="6"/>
+  <rect x="98" y="45" width="36" height="20" rx="6" fill="#3f246d"/>
+  <rect x="190" y="34" width="30" height="20" rx="6" fill="#3f246d"/>
+  <rect x="101" y="94" width="30" height="24" rx="8" fill="#ffdf00"/>
+  <rect x="190" y="84" width="31" height="31" rx="9" fill="#f45f88"/>
+  <path d="M244 54c18 7 28 22 28 40M58 62c-12 10-18 23-17 39" fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="7"/>
+  <ellipse cx="160" cy="151" rx="102" ry="13" fill="#c8b7dd" opacity=".5"/>
+</svg>

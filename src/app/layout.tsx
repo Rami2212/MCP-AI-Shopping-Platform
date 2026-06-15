@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Shopping Test Bench",
-  description: "Hosted Hugging Face AI testers for the shopping platform",
+  title: "Kapruka Genie",
+  description: "Groq AI commerce workspace",
 };
 
 export default function RootLayout({

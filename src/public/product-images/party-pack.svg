@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-labelledby="title desc">
+  <title id="title">Party pack for ten</title>
+  <desc id="desc">Party hats, balloons, plates, and cups.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff7d7"/>
+      <stop offset="1" stop-color="#e4f6ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#bg)"/>
+  <circle cx="82" cy="57" r="24" fill="#ff6c7a"/>
+  <circle cx="236" cy="54" r="26" fill="#3f88ff"/>
+  <circle cx="171" cy="43" r="21" fill="#22a06b"/>
+  <path d="M82 82l27 44M236 80l-30 45M171 65l-8 55" stroke="#3f246d" stroke-linecap="round" stroke-width="4"/>
+  <path d="M96 145l35-82 35 82z" fill="#ffdf00" stroke="#3f246d" stroke-width="6"/>
+  <path d="M163 145l35-82 35 82z" fill="#f45f88" stroke="#3f246d" stroke-width="6"/>
+  <path d="M117 95h28M184 95h28" stroke="#fff" stroke-linecap="round" stroke-width="7"/>
+  <rect x="47" y="124" width="49" height="25" rx="8" fill="#ffffff" stroke="#3f246d" stroke-width="5"/>
+  <rect x="235" y="121" width="38" height="31" rx="8" fill="#ffffff" stroke="#3f246d" stroke-width="5"/>
+</svg>

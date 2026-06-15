@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kapruka Genie - Full-screen Chat Shopping Experience</title>
+  <style>
+    :root {
+      --kapruka-purple: #3f246d;
+      --kapruka-yellow: #ffdf00;
+      --page-bg: #f6f4fb;
+      --card-bg: #ffffff;
+      --text-main: #161226;
+      --text-muted: #675f79;
+      --border: #e8e2f2;
+      --success: #18a058;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, Segoe UI, Roboto, Arial, sans-serif;
+      background: var(--page-bg);
+      color: var(--text-main);
+    }
+
+    main {
+      min-height: 100vh;
+    }
+
+    .section {
+      width: min(1360px, 100%);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: 34px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 20px;
+    }
+
+    .section-title h2 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -1px;
+    }
+
+    .section-title p {
+      margin: 7px 0 0;
+      color: var(--text-muted);
+    }
+
+    .app-shell {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 280px minmax(430px, 1fr) 330px;
+      gap: 18px;
+      min-height: 650px;
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      box-shadow: 0 12px 32px rgba(44, 22, 75, 0.07);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 900;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sidebar-list {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .side-item {
+      padding: 14px;
+      border-radius: 17px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .side-item.active {
+      background: var(--kapruka-purple);
+      color: white;
+    }
+
+    .chat-panel {
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, #fff 0%, #fbf9ff 100%);
+    }
+
+    .messages {
+      flex: 1;
+      padding: 22px;
+      overflow: auto;
+    }
+
+    .message {
+      max-width: 78%;
+      padding: 15px 17px;
+      border-radius: 19px;
+      line-height: 1.48;
+      margin-bottom: 14px;
+      box-shadow: 0 8px 18px rgba(44, 22, 75, 0.06);
+    }
+
+    .message.ai {
+      background: #f0e9fb;
+      border-bottom-left-radius: 5px;
+    }
+
+    .message.user {
+      background: var(--kapruka-purple);
+      color: white;
+      margin-left: auto;
+      border-bottom-right-radius: 5px;
+    }
+
+    .quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 8px 0 18px;
+    }
+
+    .quick-chip {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-weight: 800;
+      color: var(--kapruka-purple);
+    }
+
+    .product-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .product-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 10px 24px rgba(44, 22, 75, 0.07);
+    }
+
+    .product-img {
+      height: 110px;
+      background: #eee9f5;
+      display: grid;
+      place-items: center;
+      font-size: 48px;
+    }
+
+    .product-body {
+      padding: 13px;
+    }
+
+    .product-body h4 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .price {
+      color: var(--kapruka-purple);
+      font-weight: 900;
+    }
+
+    .add-btn {
+      width: 100%;
+      margin-top: 10px;
+      border: none;
+      background: var(--kapruka-yellow);
+      padding: 9px;
+      border-radius: 10px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .composer {
+      padding: 16px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      background: white;
+    }
+
+    .composer button,
+    .composer input {
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      padding: 14px;
+    }
+
+    .composer input {
+      min-width: 0;
+      flex: 1;
+      outline: none;
+    }
+
+    .composer .send {
+      background: var(--kapruka-yellow);
+      border-color: var(--kapruka-yellow);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .buy-list {
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .buy-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      align-items: center;
+    }
+
+    .mini-img {
+      width: 48px;
+      height: 48px;
+      flex: 0 0 48px;
+      border-radius: 14px;
+      background: #f0e9fb;
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+    }
+
+    .buy-item strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .buy-item span {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .total-box {
+      margin: 14px 16px 16px;
+      background: var(--kapruka-purple);
+      color: white;
+      border-radius: 22px;
+      padding: 18px;
+    }
+
+    .total-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 9px;
+    }
+
+    .checkout-btn {
+      width: 100%;
+      margin-top: 12px;
+      border: none;
+      padding: 14px;
+      border-radius: 14px;
+      background: var(--kapruka-yellow);
+      color: #1a0f2e;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    @media (max-width: 1100px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .section {
+        padding: 22px 14px;
+      }
+
+      .section-title h2 {
+        font-size: 24px;
+      }
+
+      .product-row {
+        grid-template-columns: 1fr;
+      }
+
+      .message {
+        max-width: 94%;
+      }
+
+      .composer {
+        flex-wrap: wrap;
+      }
+
+      .composer input {
+        flex-basis: 100%;
+        order: -1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="section">
+      <div class="section-title">
+        <div>
+          <h2>Full-screen chat shopping experience</h2>
+          <p>Conversational product discovery with real-time cart/buy box, product cards, and checkout actions.</p>
+        </div>
+      </div>
+
+      <div class="app-shell">
+        <aside class="panel">
+          <div class="panel-header">Agent Modes <span>&#9881;</span></div>
+          <div class="sidebar-list">
+            <div class="side-item active"><span>&#128717;</span> Smart Shopping</div>
+            <div class="side-item"><span>&#127874;</span> Event Planner</div>
+            <div class="side-item"><span>&#127873;</span> Gift Box Builder</div>
+            <div class="side-item"><span>&#9878;</span> Product Compare</div>
+            <div class="side-item"><span>&#128230;</span> Order Tracking</div>
+            <div class="side-item"><span>&#128140;</span> Gift Message</div>
+          </div>
+        </aside>
+
+        <div class="panel chat-panel">
+          <div class="panel-header">Kapruka Genie <span style="color: var(--success);">&#9679; Active</span></div>
+          <div class="messages">
+            <div class="message ai">Hello! I can help you find a gift. Who is this for and what is your budget?</div>
+            <div class="quick-chips">
+              <span class="quick-chip">Male</span>
+              <span class="quick-chip">Female</span>
+              <span class="quick-chip">Child</span>
+              <span class="quick-chip">Couple</span>
+            </div>
+            <div class="message user">I need a Father's Day gift under Rs. 10,000 with delivery to Colombo.</div>
+            <div class="message ai">Great. Here are suitable products ranked by delivery availability, value score, and occasion fit.</div>
+            <div class="product-row">
+              <article class="product-card">
+                <div class="product-img">&#8986;</div>
+                <div class="product-body">
+                  <h4>Premium Watch Gift</h4>
+                  <div class="price">Rs. 8,950</div>
+                  <button class="add-btn">Add to Buy Box</button>
+                </div>
+              </article>
+              <article class="product-card">
+                <div class="product-img">&#127851;</div>
+                <div class="product-body">
+                  <h4>Chocolate Hamper</h4>
+                  <div class="price">Rs. 5,450</div>
+                  <button class="add-btn">Add to Buy Box</button>
+                </div>
+              </article>
+              <article class="product-card">
+                <div class="product-img">&#128085;</div>
+                <div class="product-body">
+                  <h4>Casual T-Shirt</h4>
+                  <div class="price">Rs. 2,950</div>
+                  <button class="add-btn">Add to Buy Box</button>
+                </div>
+              </article>
+            </div>
+          </div>
+          <div class="composer">
+            <button title="Voice input">&#127908;</button>
+            <button title="Upload image">&#128247;</button>
+            <input placeholder="Ask Genie to search, compare, plan an event, or checkout..." />
+            <button class="send">Send</button>
+          </div>
+        </div>
+
+        <aside class="panel">
+          <div class="panel-header">Buy Box <span>&#128722;</span></div>
+          <div class="buy-list">
+            <div class="buy-item">
+              <div class="mini-img">&#8986;</div>
+              <div><strong>Premium Watch Gift</strong><span>Qty 1 - Delivery: Colombo</span></div>
+            </div>
+            <div class="buy-item">
+              <div class="mini-img">&#128140;</div>
+              <div><strong>Gift Message</strong><span>Friendly Father's Day note</span></div>
+            </div>
+            <div class="buy-item">
+              <div class="mini-img">&#128666;</div>
+              <div><strong>Rush Delivery</strong><span>ETA prediction enabled</span></div>
+            </div>
+          </div>
+          <div class="total-box">
+            <div class="total-line"><span>Subtotal</span><strong>Rs. 8,950</strong></div>
+            <div class="total-line"><span>Delivery</span><strong>Rs. 550</strong></div>
+            <div class="total-line" style="font-size: 21px;"><span>Total</span><strong>Rs. 9,500</strong></div>
+            <button class="checkout-btn">Create Order Link</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

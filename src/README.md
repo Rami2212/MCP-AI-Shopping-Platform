@@ -1,12 +1,14 @@
 # MCP AI Shopping Platform
 
-This Next.js app includes three hosted Hugging Face AI testers:
+Kapruka Genie is a hosted-AI conversational commerce app styled from `Doc/sample.html` and based on `Doc/Overview.docx`.
 
-- `/ai-chatbot` - multilingual LLM chatbot through Hugging Face chat completions
-- `/image-analysis` - hosted image classification
-- `/voice-messages` - hosted speech-to-text for recorded or uploaded audio
+- Text chat replies: Groq Qwen chat completions
+- First-message context analysis: Groq processing model
+- Image shopping and voice: OpenRouter vision, STT, and TTS APIs
+- Live products, delivery checks, and tracking: Kapruka MCP at `https://mcp.kapruka.com/mcp`
+- Ranking, event planning, gift boxes, comparison, and analytics: Groq over real MCP results
 
-No Hugging Face models are downloaded locally. The browser calls local Next API routes, and those routes call Hugging Face hosted inference.
+No AI models are downloaded locally. The browser calls local Next API routes, and those routes call hosted provider APIs.
 
 ## Getting Started
 
@@ -16,9 +18,12 @@ Create your local env file:
 Copy-Item env.local.example .env.local
 ```
 
-Edit `.env.local` and set `HF_TOKEN` to a Hugging Face access token with Inference Providers permission.
+Edit `.env.local` and set:
 
-Install dependencies and run the development server:
+- `OPENROUTER_API_KEY`
+- `GROQ_API_KEY`
+
+Run the app:
 
 ```powershell
 npm install
@@ -27,24 +32,29 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Optional Models
-
-You can override the defaults in `.env.local`:
+## Default Models
 
 ```dotenv
-HF_CHAT_MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507:novita
-HF_IMAGE_MODEL=google/vit-base-patch16-224
-HF_VOICE_MODEL=openai/whisper-large-v3
+GROQ_REPLY_MODEL=qwen/qwen3-32b
+GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
+GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
+GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
+KAPRUKA_MCP_URL=https://mcp.kapruka.com/mcp
+OPENROUTER_VISION_MODEL=qwen/qwen3-vl-32b-instruct
+OPENROUTER_STT_MODEL=openai/whisper-large-v3
+OPENROUTER_TTS_MODEL=google/gemini-3.1-flash-tts-preview
+OPENROUTER_TTS_VOICE=Kore
 ```
 
 Restart `npm run dev` after changing env values.
 
-The default chat model is `Qwen/Qwen3-235B-A22B-Instruct-2507:novita`, an advanced multilingual Qwen3 model available through Hugging Face Inference Providers. It can answer Sinhala prompts in Sinhala script. If your Hugging Face account cannot use that provider, override `HF_CHAT_MODEL` with another provider-backed chat model from the Hugging Face playground.
-
 ## Routes
 
-- UI: `/ai-chatbot`, `/image-analysis`, `/voice-messages`
-- API: `/api/ai/chatbot`, `/api/ai/image-analysis`, `/api/ai/voice-messages`
+- Main app: `/`
+- Provider test pages: `/ai-chatbot`, `/image-analysis`, `/voice-messages`
+- API: `/api/ai/chatbot`, `/api/ai/image-analysis`, `/api/ai/voice-messages`, `/api/ai/commerce`
+
+The commerce API uses the real Kapruka MCP streamable HTTP transport. It opens an MCP session, calls tools such as `kapruka_search_products`, `kapruka_check_delivery`, `kapruka_create_order`, and `kapruka_track_order`, then sends only real product/delivery results to Groq for ranking/analytics.
 
 ## Scripts
 

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-labelledby="title desc">
+  <title id="title">Chocolate celebration cake</title>
+  <desc id="desc">A layered chocolate cake with candles and frosting.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff7d7"/>
+      <stop offset="1" stop-color="#dff4ef"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#bg)"/>
+  <ellipse cx="160" cy="145" rx="104" ry="16" fill="#c8b7dd" opacity=".5"/>
+  <rect x="82" y="80" width="156" height="62" rx="15" fill="#6a3728"/>
+  <path d="M82 96c22 14 34-13 56 0 22 14 35-13 57 0 17 10 28-3 43-3v25H82z" fill="#f5cf9e"/>
+  <rect x="103" y="58" width="12" height="30" rx="5" fill="#ff6c7a"/>
+  <rect x="154" y="48" width="12" height="40" rx="5" fill="#3f88ff"/>
+  <rect x="205" y="58" width="12" height="30" rx="5" fill="#22a06b"/>
+  <path d="M109 54c7-8 7-12 0-20-7 8-7 12 0 20ZM160 44c7-8 7-12 0-20-7 8-7 12 0 20ZM211 54c7-8 7-12 0-20-7 8-7 12 0 20Z" fill="#ffdf00"/>
+  <circle cx="120" cy="123" r="5" fill="#ffdf00"/>
+  <circle cx="160" cy="123" r="5" fill="#ffdf00"/>
+  <circle cx="200" cy="123" r="5" fill="#ffdf00"/>
+</svg>

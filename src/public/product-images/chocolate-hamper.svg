@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" role="img" aria-labelledby="title desc">
+  <title id="title">Chocolate hamper</title>
+  <desc id="desc">A basket filled with wrapped chocolates and biscuits.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff2de"/>
+      <stop offset="1" stop-color="#f2e9ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="180" fill="url(#bg)"/>
+  <path d="M78 94h164l-17 55H95z" fill="#8d532e"/>
+  <path d="M100 92c0-35 120-35 120 0" fill="none" stroke="#6f3d22" stroke-width="10"/>
+  <rect x="99" y="66" width="36" height="52" rx="6" fill="#5b2e20"/>
+  <rect x="142" y="54" width="36" height="64" rx="6" fill="#c45b3a"/>
+  <rect x="185" y="66" width="36" height="52" rx="6" fill="#3f246d"/>
+  <path d="M99 82h36M142 72h36M185 82h36" stroke="#ffdf00" stroke-width="6"/>
+  <circle cx="120" cy="122" r="9" fill="#f7c76c"/>
+  <circle cx="160" cy="126" r="11" fill="#fff6d8"/>
+  <circle cx="202" cy="122" r="9" fill="#f7c76c"/>
+  <path d="M95 116h130M103 136h114" stroke="#6f3d22" stroke-linecap="round" stroke-width="6"/>
+</svg>
