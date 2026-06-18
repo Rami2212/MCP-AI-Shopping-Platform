@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   ChangeEvent,
   FormEvent,
@@ -11,6 +12,7 @@ import {
   useState,
 } from "react";
 import { stripModelThinking } from "@/lib/aiPayload";
+import { deliveryCities, locationTypes } from "@/lib/deliveryLocations";
 import { formatPrice, Product } from "@/lib/productCatalog";
 
 type ChatMessage = {
@@ -197,7 +199,7 @@ const languageOptions: Language[] = ["English", "Sinhala", "Singlish"];
 const languageLabels: Record<Language, string> = {
   English: "English",
   Sinhala: "සිංහල",
-  Singlish: "Singlish",
+  Singlish: "Tanglish",
 };
 
 const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
@@ -206,14 +208,14 @@ const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
     {
       role: "assistant",
       content:
-        "Ayubowan! මම Kapruka Genie. ඔබට අවශ්‍ය gift එක කියන්න, මම details guide කරන්නම්.",
+        "Ayubowan! මම Kapruka Genie. ඔබට අවශ්‍ය gift එක කියන්න, මම ඔයාව guide කරන්නම්.",
     },
   ],
   Singlish: [
     {
       role: "assistant",
       content:
-        "Ayubowan! Mama Kapruka Genie. Oyata ona gift eka kiyanna, mama details guide karannam.",
+        "Ayubowan! Mama Kapruka Genie. Oyata ona gift eka kiyanna, mama oyawa guide karannam.",
     },
   ],
 };
@@ -333,14 +335,14 @@ const contextQuestions: Record<
     venue: "Where will the event happen?",
   },
   Sinhala: {
-    budget: "ඔබගේ budget එක මොකක්ද?",
+    budget: "ඔබගේ budget එක කීයද?",
     occasion: "මේ තෑග්ග දෙන්නේ මොන අවස්ථාවකටද?",
     recipient: "තෑග්ග ලැබෙන්නේ කාටද?",
   },
   Singlish: {
     boxRecipient: "Gift box eka kaatada?",
-    budget: "Budget eka mokakda?",
-    category: "Mokak wage gift type ekak balannada?",
+    budget: "Budget eka keeyada?",
+    category: "Mokak wage gift type ekakda balanne?",
     eventType: "Event type eka mokakda?",
     giftBoxTheme: "Gift box theme eka mokakda?",
     itemCount: "Box ekata items keeyak oneda?",
@@ -367,7 +369,7 @@ const contextQuestionOverrides: Record<
   },
   Singlish: {
     boxRecipient: "Gift box eka kaatada?",
-    category: "Mokak wage gift type ekak balannada?",
+    category: "Mona wage gift type ekakda balanne?",
     eventType: "Event type eka mokakda?",
     giftBoxTheme: "Gift box theme eka mokakda?",
     itemCount: "Box ekata items keeyak oneda?",
@@ -483,15 +485,51 @@ const emptyContextDraft: ContextDraft = {
   venue: "",
 };
 
+function getLocalDateString(date = new Date()) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function getNonPastDate(value: string) {
+  const today = getLocalDateString();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today
+    ? value
+    : today;
+}
+
 const initialShoppingProfile: ShoppingProfile = {
   budget: "",
   category: "",
   city: "Colombo",
-  date: "2026-06-15",
+  date: getLocalDateString(),
   interests: "premium gifts, useful items",
   occasion: "",
   recipient: "",
 };
+
+function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile {
+  return {
+    ...initialShoppingProfile,
+    ...nextProfile,
+    date: getNonPastDate(nextProfile.date),
+  };
+}
+
+function normalizeModeSession(session: ModeSession): ModeSession {
+  return {
+    ...session,
+    profile: normalizeShoppingProfile(session.profile),
+  };
+}
+
+function normalizeModeSessions(sessions: Record<string, ModeSession>) {
+  return Object.fromEntries(
+    Object.entries(sessions).map(([mode, session]) => [
+      mode,
+      normalizeModeSession(session),
+    ]),
+  );
+}
 
 const copy: Record<
   Language,
@@ -559,7 +597,7 @@ const copy: Record<
     comparePrompt: "Enter 2 or 3 product IDs and I will compare them in a table.",
     continueWithoutContext: "Continue Without Context",
     contextIntro:
-      "I detected details from your first message and only need anything missing before answering it.",
+      "I detected details from your message and only need anything missing before answering it.",
     contextTitle: "Set shopping context",
     createOrderLink: "Create Order Link",
     date: "Date",
@@ -569,7 +607,7 @@ const copy: Record<
     eventPrompt: "Let us plan the event. Add the event details below.",
     giftBoxPrompt: "Let us build the gift box. Add the gift box details below.",
     giftMessageLabel: "Gift message",
-    initialEmpty: "Kapruka MCP products will appear here after a search.",
+    initialEmpty: "Kapruka products will appear here after a search.",
     initialLoading: "Loading products...",
     imageLooksLike: "Your image looks like",
     language: "Language",
@@ -582,98 +620,98 @@ const copy: Record<
     relatedGiftsReply: "I will show you related gifts.",
     recordingVoice: "Recording voice input...",
     send: "Send",
-    sendContext: "Send Context",
+    sendContext: "Send Preferences",
     sending: "Sending",
-    sendingContext: "Sending Context",
+    sendingContext: "Sending Preferences",
     senderName: "Sender name",
     subtotal: "Subtotal",
     trackingPrompt: "Enter your Kapruka order number and I will check the latest status.",
     transcribingVoice: "Transcribing voice note...",
     total: "Total",
     uploadingImage: "Processing image...",
-    useContextCard: "Use the context card above...",
+    useContextCard: "Use the preferences above...",
     userContext: "Preferences",
     voicePause: "Pause",
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
   Sinhala: {
-    active: "සක්‍රිය",
-    addProducts: "Order link එකකට products එකතු කරන්න.",
+    active: "Active",
+    addProducts: "Order එකකට products එකතු කරන්න.",
     addToBuyBox: "Cart එකට එකතු කරන්න",
     allContextDetected: "ඔබගේ message එකෙන් අවශ්‍ය context හමු වුණා.",
     askPlaceholder: "Genieගෙන් search, compare, plan, checkout අහන්න...",
     buyBox: "Cart",
     checkout: "Delivery address",
     city: "නගරය",
-    continueWithoutContext: "Context නැතුව ඉදිරියට",
+    continueWithoutContext: "Preferences නැතුව ඉදිරියට",
     contextIntro:
-      "ඔබගේ පළමු message එකෙන් හමු වූ details පාවිච්චි කරලා, අඩු දේවල් විතරක් අහනවා.",
-    contextTitle: "Shopping context තෝරන්න",
-    createOrderLink: "Order Link හදන්න",
+      "ඔබගේ message එකෙන් හමු වූ details පාවිච්චි කරලා, අඩු දේවල් විතරක් අහනවා.",
+    contextTitle: "Shopping preferences තෝරන්න",
+    createOrderLink: "Create Order Link",
     date: "දිනය",
-    detectedContext: "හමු වූ context",
+    detectedContext: "හමු වූ preferences",
     delivery: "Delivery",
     deliveryInstructions: "Delivery instructions",
-    initialEmpty: "Search එකකට පස්සේ Kapruka MCP products මෙතැන පෙන්වයි.",
+    initialEmpty: "සෙවීමට පස්සේ Kapruka products මෙතැන පෙන්වයි.",
     initialLoading: "Products load වෙනවා...",
     language: "භාෂාව",
     modes: "Agent Modes",
-    openCheckout: "Checkout අරින්න",
+    openCheckout: "Open Checkout",
     productView: "බලන්න",
     recipientName: "Recipient name",
     recipientPhone: "Recipient phone",
     send: "යවන්න",
-    sendContext: "Context යවන්න",
+    sendContext: "Preferences යවන්න",
     sending: "යවමින්",
-    sendingContext: "Context යවමින්",
+    sendingContext: "Preferences යවමින්",
     senderName: "Sender name",
     subtotal: "Subtotal",
     total: "Total",
-    useContextCard: "ඉහළ context card එක භාවිත කරන්න...",
+    useContextCard: "ඉහළ preferences භාවිත කරන්න...",
     userContext: "Preferences",
   },
   Singlish: {
     active: "Active",
-    addProducts: "Cart order link ekak hadanna products add karanna.",
+    addProducts: "Order ekak hadanna products add karanna.",
     addToBuyBox: "Cart ekata add karanna",
-    allContextDetected: "Oyageda message eken needed context tika detect una.",
+    allContextDetected: "Oyage message eken preferences detect una.",
     askPlaceholder: "Genie gen search, compare, plan, checkout ahanna...",
     buyBox: "Cart",
     checkout: "Delivery address",
     city: "City eka",
     clearHistory: "History clear karanna",
     comparePrompt: "Product IDs 2k hari 3k hari denna. Mama table ekakin compare karannam.",
-    continueWithoutContext: "Context nathuwa continue",
+    continueWithoutContext: "Preferences nathuwa continue",
     contextIntro:
       "Oyage message eken details detect kala.",
-    contextTitle: "Shopping context set karanna",
-    createOrderLink: "Order Link hadanna",
+    contextTitle: "Shopping preferences set karanna",
+    createOrderLink: "Create Order Link",
     date: "Date eka",
-    detectedContext: "Detected context",
+    detectedContext: "Detected preferences",
     delivery: "Delivery",
     deliveryInstructions: "Delivery instructions",
     eventPrompt: "Event eka plan karamu. Pahala details tika denna.",
     giftBoxPrompt: "Gift box eka hadamu. Pahala details tika denna.",
     giftMessageLabel: "Gift message",
-    initialEmpty: "Search ekakata passe Kapruka MCP products methana pennanawa.",
+    initialEmpty: "Seweemakata passe Kapruka products methana pennanawa.",
     initialLoading: "Products load wenawa...",
     language: "Language",
     modes: "Agent Modes",
-    openCheckout: "Checkout open karanna",
+    openCheckout: "Open Checkout",
     productView: "Balanna",
     recipientName: "Recipient name",
     recipientPhone: "Recipient phone",
     relatedGiftsReply: "Mama oyata related gifts pennannam.",
     send: "Send",
-    sendContext: "Context send karanna",
+    sendContext: "Preferences send karanna",
     sending: "Sending",
-    sendingContext: "Context sending",
+    sendingContext: "Preferences sending",
     senderName: "Sender name",
     subtotal: "Subtotal",
     trackingPrompt: "Kapruka order number eka denna. Mama latest status eka balannam.",
     total: "Total",
-    useContextCard: "Uda context card eka use karanna...",
+    useContextCard: "Uda preferences use karanna...",
     userContext: "Preferences",
   },
 };
@@ -681,13 +719,13 @@ const copy: Record<
 const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>>> = {
   English: {},
   Sinhala: {
-    addProducts: "Cart order link එකක් හදන්න products එකතු කරන්න.",
+    addProducts: "Order එකක් හදන්න products එකතු කරන්න.",
     addToBuyBox: "Cart එකට එකතු කරන්න",
     buyBox: "Cart",
     clearHistory: "History clear කරන්න",
     comparePrompt: "Product IDs 2ක් හෝ 3ක් දෙන්න. මම table එකකින් compare කරන්නම්.",
     contextIntro: "ඔබ දුන් details අනුව අඩු තොරතුරු ටික පමණක් තෝරන්න.",
-    contextTitle: "Context තෝරන්න",
+    contextTitle: "Preferences තෝරන්න",
     eventPrompt: "Event එක plan කරමු. පහළ details ටික තෝරන්න.",
     giftBoxPrompt: "Gift box එක හදමු. පහළ details ටික තෝරන්න.",
     deliveryInstructions: "Delivery instructions",
@@ -699,7 +737,7 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
     trackingPrompt: "Kapruka order number එක දෙන්න. මම latest status එක බලන්නම්.",
     transcribingVoice: "Voice note එක text කරනවා...",
     uploadingImage: "Image process වෙනවා...",
-    useContextCard: "ඉහළ context card එක භාවිතා කරන්න...",
+    useContextCard: "ඉහළ preferences භාවිතා කරන්න...",
     userContext: "Preferences",
     voicePause: "Pause",
     voiceResume: "Resume",
@@ -893,7 +931,7 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "Create order link": "Order link hadanna",
     "Enter order number": "Order number eka danna",
     "More like this": "Me wage thawa",
-    "Open checkout": "Checkout open karanna",
+    "Open checkout": "Open checkout",
     Perfume: "Perfume",
     Roses: "Roses",
     "Search more products": "Thawa products hoyanna",
@@ -930,6 +968,7 @@ const CHAT_DB_NAME = "kapruka-genie-chat";
 const CHAT_STORE_NAME = "chat-state";
 const CHAT_STATE_KEY = "current";
 const CHAT_STORAGE_KEY = "kapruka-genie-chat-state";
+const INTRO_PANEL_STORAGE_KEY = "kapruka-genie-intro-panel-date";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
@@ -1058,6 +1097,7 @@ export function KaprukaGenieApp() {
   const [checkoutDetails, setCheckoutDetails] = useState({
     address: "",
     instructions: "",
+    locationType: "",
     recipientName: "",
     recipientPhone: "",
     senderName: "",
@@ -1091,7 +1131,9 @@ export function KaprukaGenieApp() {
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [isChatStateLoaded, setIsChatStateLoaded] = useState(false);
   const [isLeftPanelOpen, setIsLeftPanelOpen] = useState(false);
+  const [isInfoMenuOpen, setIsInfoMenuOpen] = useState(false);
   const [isBuyBoxOpen, setIsBuyBoxOpen] = useState(false);
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
   const [modeSessions, setModeSessions] = useState<Record<string, ModeSession>>({});
   const [compareIds, setCompareIds] = useState({ first: "", second: "" });
   const [compareRows, setCompareRows] = useState<CompareRow[]>([]);
@@ -1104,6 +1146,7 @@ export function KaprukaGenieApp() {
   const [guidedMoreCount, setGuidedMoreCount] = useState(0);
   const [isCompareSubmitting, setIsCompareSubmitting] = useState(false);
   const [isTrackingSubmitting, setIsTrackingSubmitting] = useState(false);
+  const [isCheckoutCreating, setIsCheckoutCreating] = useState(false);
   const [giftMessagePreferences, setGiftMessagePreferences] =
     useState<GiftMessagePreferences>({
       language: "English",
@@ -1112,6 +1155,7 @@ export function KaprukaGenieApp() {
       tone: "Warm",
     });
   const [isGiftMessageGenerating, setIsGiftMessageGenerating] = useState(false);
+  const [isIntroPanelVisible, setIsIntroPanelVisible] = useState(false);
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -1125,11 +1169,16 @@ export function KaprukaGenieApp() {
   const text = { ...copy.English, ...copy[language], ...copyOverrides[language] } as Required<
     (typeof copy)["English"]
   >;
+  const minimumDeliveryDate = getLocalDateString();
   const visibleProducts = recommendedProducts.slice(0, 3);
   const isCompareMode = activeMode.includes("Compare");
   const isTrackingMode = activeMode.includes("Tracking");
   const isGiftMessageMode = activeMode.includes("Message");
   const isFormToolMode = isCompareMode || isTrackingMode || isGiftMessageMode;
+
+  function closeIntroPanel() {
+    setIsIntroPanelVisible(false);
+  }
 
   function getChipLabel(chip: string) {
     return (
@@ -1185,7 +1234,7 @@ export function KaprukaGenieApp() {
         input: "",
         messages: starterMessagesByLanguage[language],
         pendingUserRequest: "",
-        profile: initialShoppingProfile,
+        profile: normalizeShoppingProfile(initialShoppingProfile),
       };
     }
 
@@ -1208,7 +1257,7 @@ export function KaprukaGenieApp() {
         : mode.includes("Gift Box")
           ? "Build a gift box"
           : "",
-      profile,
+      profile: normalizeShoppingProfile(profile),
     };
   }
 
@@ -1220,18 +1269,20 @@ export function KaprukaGenieApp() {
       input,
       messages,
       pendingUserRequest,
-      profile,
+      profile: normalizeShoppingProfile(profile),
     };
   }
 
   function applyModeSession(session: ModeSession) {
-    setChips(session.chips);
-    setContextDraft(session.contextDraft);
-    setConversationStage(session.conversationStage);
-    setInput(session.input);
-    setMessages(session.messages);
-    setPendingUserRequest(session.pendingUserRequest);
-    setProfile(session.profile);
+    const normalizedSession = normalizeModeSession(session);
+
+    setChips(normalizedSession.chips);
+    setContextDraft(normalizedSession.contextDraft);
+    setConversationStage(normalizedSession.conversationStage);
+    setInput(normalizedSession.input);
+    setMessages(normalizedSession.messages);
+    setPendingUserRequest(normalizedSession.pendingUserRequest);
+    setProfile(normalizedSession.profile);
   }
 
   function resetToolPanels() {
@@ -1249,14 +1300,14 @@ export function KaprukaGenieApp() {
     }
 
     if (!data.products || data.products.length === 0) {
-      if (language === "Sinhala") return "Product cards හමු වුණේ නැහැ.";
-      if (language === "Singlish") return "Product cards hambune naha.";
-      return "I could not find matching product cards.";
+      if (language === "Sinhala") return "Products හමු වුණේ නැහැ.";
+      if (language === "Singlish") return "Products hambune naha.";
+      return "I could not find matching products.";
     }
 
-    if (language === "Sinhala") return "Product cards update කළා.";
-    if (language === "Singlish") return "Product cards update kala.";
-    return "I updated the product cards.";
+    if (language === "Sinhala") return "Products update කළා.";
+    if (language === "Singlish") return "Products update kala.";
+    return "I updated the products.";
   }
 
   function getParticipantCount(draft: ContextDraft) {
@@ -1858,6 +1909,40 @@ export function KaprukaGenieApp() {
   }
 
   useEffect(() => {
+    const today = getLocalDateString();
+
+    try {
+      if (localStorage.getItem(INTRO_PANEL_STORAGE_KEY) === today) {
+        return;
+      }
+    } catch {
+      // If storage is unavailable, still show the welcome sheet for this load.
+    }
+
+    let hideTimer: number | undefined;
+    const showTimer = window.setTimeout(() => {
+      setIsIntroPanelVisible(true);
+
+      try {
+        localStorage.setItem(INTRO_PANEL_STORAGE_KEY, today);
+      } catch {
+        // Ignore private browsing or storage quota errors.
+      }
+
+      hideTimer = window.setTimeout(() => {
+        setIsIntroPanelVisible(false);
+      }, 5000);
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(showTimer);
+      if (hideTimer !== undefined) {
+        window.clearTimeout(hideTimer);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let isMounted = true;
 
     async function restoreChatState() {
@@ -1870,7 +1955,9 @@ export function KaprukaGenieApp() {
 
         if (storedState) {
           const restoredMode = storedState.activeMode ?? "Smart Shopping";
-          const restoredSessions = storedState.modeSessions ?? {};
+          const restoredSessions = normalizeModeSessions(
+            storedState.modeSessions ?? {},
+          );
           const restoredSession =
             restoredSessions[restoredMode] ?? {
               chips: storedState.chips,
@@ -1879,7 +1966,7 @@ export function KaprukaGenieApp() {
               input: storedState.input,
               messages: storedState.messages,
               pendingUserRequest: storedState.pendingUserRequest,
-              profile: storedState.profile,
+              profile: normalizeShoppingProfile(storedState.profile),
             };
           const shouldUseFreshStarterChips =
             restoredSession.conversationStage === "first-message" &&
@@ -1965,31 +2052,72 @@ export function KaprukaGenieApp() {
     let isMounted = true;
 
     async function loadInitialProducts() {
-      setStatus("Kapruka MCP is loading live starter products.");
+      const maxAttempts = 3;
+
+      async function requestInitialProducts(attempt: number) {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 7000);
+
+        try {
+          const response = await fetch("/api/ai/commerce", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              cartIds: [],
+              mode: "Smart Shopping",
+              profile: normalizeShoppingProfile(initialShoppingProfile),
+              query: "gift",
+              task: "initial",
+            }),
+            signal: controller.signal,
+          });
+          const data = (await response.json()) as CommerceResponse & {
+            error?: string;
+          };
+
+          if (!response.ok) {
+            throw new Error(data.error ?? "Kapruka MCP product load failed.");
+          }
+
+          if (!data.products || data.products.length === 0) {
+            throw new Error(
+              `Kapruka MCP returned no starter products on attempt ${attempt}.`,
+            );
+          }
+
+          return data;
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      }
 
       try {
-        const response = await fetch("/api/ai/commerce", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            cartIds: [],
-            mode: "Smart Shopping",
-            profile: initialShoppingProfile,
-            query: "gift",
-            task: "initial",
-          }),
-        });
-        const data = (await response.json()) as CommerceResponse & {
-          error?: string;
-        };
+        let data: (CommerceResponse & { error?: string }) | null = null;
 
-        if (!response.ok) {
-          throw new Error(data.error ?? "Kapruka MCP product load failed.");
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          if (!isMounted) {
+            return;
+          }
+
+          setStatus(
+            attempt === 1
+              ? "Kapruka MCP is loading live starter products."
+              : `Kapruka MCP returned empty/error. Retrying ${attempt}/${maxAttempts}.`,
+          );
+
+          try {
+            data = await requestInitialProducts(attempt);
+            break;
+          } catch (error) {
+            if (attempt === maxAttempts) {
+              throw error;
+            }
+          }
         }
 
-        if (!isMounted) {
+        if (!isMounted || !data) {
           return;
         }
 
@@ -2025,10 +2153,14 @@ export function KaprukaGenieApp() {
           }));
         }
 
-        setStatus("Live Kapruka MCP starter products ready.");
+        setStatus("Kapruka products ready.");
       } catch (error) {
         if (isMounted) {
-          setStatus(getErrorMessage(error));
+          const message =
+            error instanceof DOMException && error.name === "AbortError"
+              ? "Kapruka products timed out after automatic retries."
+              : getErrorMessage(error);
+          setStatus(message);
         }
       } finally {
         if (isMounted) {
@@ -2110,6 +2242,7 @@ export function KaprukaGenieApp() {
     mode = activeMode,
     profileOverride = profile,
   ) {
+    const requestProfile = normalizeShoppingProfile(profileOverride);
     const response = await fetch("/api/ai/commerce", {
       method: "POST",
       headers: {
@@ -2119,7 +2252,7 @@ export function KaprukaGenieApp() {
         cartIds: buyBox.map((product) => product.id),
         language,
         mode,
-        profile: profileOverride,
+        profile: requestProfile,
         query,
         task: getTaskForMode(mode),
       }),
@@ -2524,7 +2657,7 @@ export function KaprukaGenieApp() {
         body: JSON.stringify({
           language,
           mode: "Product Compare",
-          profile,
+          profile: normalizeShoppingProfile(profile),
           query: ids.join(" "),
           task: "compare",
         }),
@@ -2592,7 +2725,7 @@ export function KaprukaGenieApp() {
         body: JSON.stringify({
           language,
           mode: "Order Tracking",
-          profile,
+          profile: normalizeShoppingProfile(profile),
           query: id,
           task: "track",
         }),
@@ -2638,7 +2771,7 @@ export function KaprukaGenieApp() {
           giftMessagePreferences: nextPreferences,
           language,
           mode: "Gift Message",
-          profile,
+          profile: normalizeShoppingProfile(profile),
           query: nextPreferences.suggestions || "Generate a gift message",
           task: "giftMessage",
         }),
@@ -2702,13 +2835,30 @@ export function KaprukaGenieApp() {
     }
   }
 
-  async function handleCreateOrderLink() {
+  function openCheckoutModal() {
     if (buyBox.length === 0) {
       setStatus("Add at least one live Kapruka product before checkout.");
       return;
     }
 
-    setActivityMessage(text.processing);
+    setCheckoutUrl("");
+    setIsCheckoutModalOpen(true);
+  }
+
+  async function handleCreateOrderLink(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+
+    if (isCheckoutCreating) {
+      return;
+    }
+
+    if (buyBox.length === 0) {
+      setStatus("Add at least one live Kapruka product before checkout.");
+      return;
+    }
+
+    setIsCheckoutCreating(true);
+    setCheckoutUrl("");
     setStatus("Kapruka MCP is creating a guest-checkout link.");
 
     try {
@@ -2725,7 +2875,7 @@ export function KaprukaGenieApp() {
           },
           language,
           mode: activeMode,
-          profile,
+          profile: normalizeShoppingProfile(profile),
           query: "Create Kapruka guest checkout link",
           task: "checkout",
         }),
@@ -2739,16 +2889,11 @@ export function KaprukaGenieApp() {
       }
 
       applyCommerceResponse(data);
-      addMessage({
-        role: "assistant",
-        content:
-          "Kapruka MCP created a guest-checkout link. Open it from the Cart to complete payment in the browser.",
-      });
       setStatus("Kapruka MCP checkout link created.");
     } catch (error) {
       setStatus(getErrorMessage(error));
     } finally {
-      setActivityMessage("");
+      setIsCheckoutCreating(false);
     }
   }
 
@@ -3070,16 +3215,307 @@ export function KaprukaGenieApp() {
 
   return (
     <main className="h-screen w-screen overflow-hidden bg-[#f6f4fb] text-[#161226]">
+      {isIntroPanelVisible ? (
+        <button
+          type="button"
+          aria-label="Close welcome panel"
+          onClick={closeIntroPanel}
+          className="fixed inset-x-0 bottom-0 top-[50vh] z-40 cursor-default bg-[#161226]/25 backdrop-blur-[2px]"
+        />
+      ) : null}
+      <div
+        className={`fixed inset-x-0 top-0 z-50 h-[50vh] w-screen transition-transform duration-700 ease-out ${
+          isIntroPanelVisible
+            ? "translate-y-0"
+            : "pointer-events-none -translate-y-full"
+        }`}
+      >
+        <section className="h-full overflow-auto rounded-b-[30px] border-b border-white/45 bg-[linear-gradient(135deg,#3f246d_0%,#7b3fb1_34%,#f06aa8_66%,#ffdf00_100%)] p-[1px] shadow-[0_24px_70px_rgba(44,22,75,0.3)]">
+          <div className="flex min-h-full items-center bg-[radial-gradient(circle_at_12%_20%,rgba(255,223,0,0.32),transparent_28%),radial-gradient(circle_at_88%_16%,rgba(240,106,168,0.28),transparent_30%),linear-gradient(135deg,rgba(255,255,255,0.96),rgba(246,244,251,0.82))] px-5 py-6 backdrop-blur md:px-8">
+            <div className="mx-auto grid w-full max-w-6xl gap-5">
+              <div className="min-w-0 pr-12">
+                <p className="inline-flex rounded-full bg-[#ffdf00] px-3 py-1 text-xs font-black uppercase tracking-normal text-[#1a0f2e] shadow-[0_10px_24px_rgba(44,22,75,0.12)]">
+                  Kapruka Genie is ready
+                </p>
+                <h2 className="mt-3 max-w-4xl text-4xl font-black leading-tight tracking-normal text-[#3f246d] md:text-6xl">
+                  Shop smarter with live AI gifting support
+                </h2>
+                <p className="mt-3 max-w-3xl text-base font-bold leading-7 text-[#4d4261] md:text-lg">
+                  Ask for gifts, compare products, plan events, write gift
+                  messages, and create Kapruka checkout links from one guided
+                  chat workspace.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={closeIntroPanel}
+                  aria-label="Close welcome panel"
+                  className="absolute right-4 top-4 grid h-10 w-10 cursor-pointer place-items-center rounded-[12px] border border-[#e8e2f2] bg-white text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.08)]"
+                >
+                  <Icon name="x" className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={closeIntroPanel}
+                  className="h-12 cursor-pointer rounded-[14px] bg-[#3f246d] px-5 text-sm font-black text-white shadow-[0_12px_26px_rgba(63,36,109,0.28)] transition hover:bg-[#2f1957]"
+                >
+                  Chat now with Kapruka Genie
+                </button>
+                <Link
+                  href="/features"
+                  onClick={closeIntroPanel}
+                  className="grid h-12 cursor-pointer place-items-center rounded-[14px] border border-[#e8e2f2] bg-white px-5 text-sm font-black text-[#3f246d] shadow-[0_12px_26px_rgba(44,22,75,0.1)] transition hover:bg-[#f6f4fb]"
+                >
+                  See features
+                </Link>
+                <Link
+                  href="/demo-video"
+                  onClick={closeIntroPanel}
+                  className="grid h-12 cursor-pointer place-items-center rounded-[14px] bg-[#ffdf00] px-5 text-sm font-black text-[#1a0f2e] shadow-[0_12px_26px_rgba(255,223,0,0.3)] transition hover:bg-white"
+                >
+                  See demo video
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      {isCheckoutModalOpen ? (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-[#161226]/45 px-4 py-6 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Close checkout details"
+            onClick={() => setIsCheckoutModalOpen(false)}
+            className="absolute inset-0 cursor-default"
+          />
+          <section className="relative z-10 max-h-full w-full max-w-2xl overflow-auto rounded-[22px] border border-[#e8e2f2] bg-white shadow-[0_24px_70px_rgba(44,22,75,0.28)]">
+            <div className="flex items-center justify-between gap-3 border-b border-[#e8e2f2] p-5">
+              <div>
+                <h2 className="text-xl font-black text-[#3f246d]">
+                  Checkout Details
+                </h2>
+                <p className="mt-1 text-sm font-bold text-[#675f79]">
+                  Confirm delivery and recipient details before creating the
+                  Kapruka checkout link.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCheckoutModalOpen(false)}
+                className="grid h-10 w-10 cursor-pointer place-items-center rounded-[12px] border border-[#e8e2f2] text-[#3f246d]"
+                aria-label="Close checkout details"
+              >
+                <Icon name="x" className="h-4 w-4" />
+              </button>
+            </div>
+
+            {checkoutUrl ? (
+              <div className="grid gap-4 p-5 text-center">
+                <div className="rounded-[18px] bg-[#f6f4fb] p-5">
+                  <p className="text-sm font-black uppercase text-[#7b3fb1]">
+                    Checkout link ready
+                  </p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#675f79]">
+                    Open the Kapruka checkout page to complete payment.
+                  </p>
+                </div>
+                <a
+                  href={checkoutUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="grid h-12 cursor-pointer place-items-center rounded-[14px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e] transition hover:bg-[#3f246d] hover:text-white"
+                >
+                  {text.openCheckout}
+                </a>
+              </div>
+            ) : (
+              <form
+                onSubmit={(event) => void handleCreateOrderLink(event)}
+                className="grid gap-4 p-5"
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    {text.recipientName}
+                    <input
+                      required
+                      value={checkoutDetails.recipientName}
+                      onChange={(event) =>
+                        setCheckoutDetails((current) => ({
+                          ...current,
+                          recipientName: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    {text.recipientPhone}
+                    <input
+                      required
+                      value={checkoutDetails.recipientPhone}
+                      onChange={(event) =>
+                        setCheckoutDetails((current) => ({
+                          ...current,
+                          recipientPhone: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79] md:col-span-2">
+                    {text.checkout}
+                    <input
+                      required
+                      value={checkoutDetails.address}
+                      onChange={(event) =>
+                        setCheckoutDetails((current) => ({
+                          ...current,
+                          address: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    Delivery City
+                    <select
+                      required
+                      value={profile.city}
+                      onChange={(event) =>
+                        setProfile((current) => ({
+                          ...current,
+                          city: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-[#161226] outline-none"
+                    >
+                      <option value="">Select delivery city</option>
+                      {deliveryCities.map((city) => (
+                        <option key={city} value={city}>
+                          {city}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    Location Type
+                    <select
+                      value={checkoutDetails.locationType}
+                      onChange={(event) =>
+                        setCheckoutDetails((current) => ({
+                          ...current,
+                          locationType: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-[#161226] outline-none"
+                    >
+                      <option value="">Optional</option>
+                      {locationTypes.map((locationType) => (
+                        <option key={locationType} value={locationType}>
+                          {locationType}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    {text.date}
+                    <input
+                      required
+                      type="date"
+                      min={minimumDeliveryDate}
+                      value={profile.date}
+                      onChange={(event) =>
+                        setProfile((current) => ({
+                          ...current,
+                          date: getNonPastDate(event.target.value),
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                    {text.senderName}
+                    <input
+                      required
+                      value={checkoutDetails.senderName}
+                      onChange={(event) =>
+                        setCheckoutDetails((current) => ({
+                          ...current,
+                          senderName: event.target.value,
+                        }))
+                      }
+                      className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                    />
+                  </label>
+                </div>
+                <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                  Delivery instructions
+                  <textarea
+                    value={checkoutDetails.instructions}
+                    onChange={(event) =>
+                      setCheckoutDetails((current) => ({
+                        ...current,
+                        instructions: event.target.value,
+                      }))
+                    }
+                    rows={2}
+                    className="resize-none rounded-[12px] border border-[#e8e2f2] px-3 py-2 text-[#161226] outline-none"
+                  />
+                </label>
+                <label className="grid gap-1 text-sm font-bold text-[#675f79]">
+                  {text.giftMessageLabel}
+                  <textarea
+                    value={giftMessage}
+                    onChange={(event) => setGiftMessage(event.target.value)}
+                    rows={3}
+                    className="resize-none rounded-[12px] border border-[#e8e2f2] px-3 py-2 text-[#161226] outline-none"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={isCheckoutCreating}
+                  className="h-12 cursor-pointer rounded-[14px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-wait disabled:opacity-70"
+                >
+                  {isCheckoutCreating ? "Processing..." : text.createOrderLink}
+                </button>
+              </form>
+            )}
+          </section>
+        </div>
+      ) : null}
       <section className="flex h-full w-full flex-col gap-3 px-4 py-4">
         <div className="flex flex-none flex-col justify-between gap-3 md:flex-row md:items-end">
-          <div>
+          <div className="flex w-full items-center justify-between gap-2 md:w-auto">
             <h1 className="mt-1 text-3xl font-black tracking-normal sm:text-4xl">
               <span className="text-[#3f246d]">Kapruka</span>{" "}
-              <span className="text-[#ffdf00] drop-shadow-[0_1px_0_rgba(26,15,46,0.35)]">Genie</span>
+              <span className="text-[#d6a900] drop-shadow-[0_1px_0_rgba(26,15,46,0.32)]">Genie</span>
             </h1>
+            <button
+              type="button"
+              onClick={() => setIsInfoMenuOpen(true)}
+              className="mt-1 grid h-10 w-10 place-items-center rounded-[12px] border border-[#e8e2f2] bg-white text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] md:hidden"
+              aria-label="Open information menu"
+            >
+              <Icon name="menu" className="h-4 w-4" />
+            </button>
           </div>
-          <div className="rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)]">
-            {status}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
+            <div className="min-w-0 rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)] md:max-w-[440px]">
+              {status}
+            </div>
+            <Link
+              href="/features"
+              className="hidden h-11 place-items-center rounded-[13px] border border-[#e8e2f2] bg-white px-4 text-sm font-black text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] xl:grid"
+            >
+              See features
+            </Link>
+            <Link
+              href="/demo-video"
+              className="hidden h-11 place-items-center rounded-[13px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] shadow-[0_12px_32px_rgba(44,22,75,0.05)] xl:grid"
+            >
+              See demo video
+            </Link>
           </div>
           <div className="flex gap-2 xl:hidden">
             <button
@@ -3088,7 +3524,7 @@ export function KaprukaGenieApp() {
               className="flex h-11 items-center gap-2 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d]"
             >
               <Icon name="menu" className="h-4 w-4" />
-              {text.modes}
+              Modes and Preferences
             </button>
             <button
               type="button"
@@ -3098,18 +3534,50 @@ export function KaprukaGenieApp() {
               <Icon name="cart" className="h-4 w-4" />
               {text.buyBox}
             </button>
+            <button
+              type="button"
+              onClick={() => setIsInfoMenuOpen(true)}
+              className="hidden h-11 w-11 place-items-center rounded-[12px] border border-[#e8e2f2] bg-white text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] md:grid xl:hidden"
+              aria-label="Open information menu"
+            >
+              <Icon name="menu" className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        {(isLeftPanelOpen || isBuyBoxOpen) && (
+        {isInfoMenuOpen ? (
+          <div className="fixed right-4 top-[76px] z-40 grid w-[min(280px,calc(100vw-32px))] gap-2 rounded-[18px] border border-[#e8e2f2] bg-white p-3 shadow-[0_18px_50px_rgba(44,22,75,0.18)] xl:hidden">
+            <Link
+              href="/features"
+              onClick={() => setIsInfoMenuOpen(false)}
+              className="grid h-11 place-items-center rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d]"
+            >
+              See features
+            </Link>
+            <Link
+              href="/demo-video"
+              onClick={() => setIsInfoMenuOpen(false)}
+              className="grid h-11 place-items-center rounded-[12px] bg-[#ffdf00] px-3 text-sm font-black text-[#1a0f2e]"
+            >
+              See demo video
+            </Link>
+          </div>
+        ) : null}
+
+        {(isInfoMenuOpen || isLeftPanelOpen || isBuyBoxOpen) && (
           <button
             type="button"
             aria-label="Close panels"
             onClick={() => {
+              setIsInfoMenuOpen(false);
               setIsLeftPanelOpen(false);
               setIsBuyBoxOpen(false);
             }}
-            className="fixed inset-0 z-30 bg-[#161226]/35 xl:hidden"
+            className={`fixed inset-0 z-30 xl:hidden ${
+              isInfoMenuOpen && !isLeftPanelOpen && !isBuyBoxOpen
+                ? "bg-transparent"
+                : "bg-[#161226]/35"
+            }`}
           />
         )}
 
@@ -3121,7 +3589,7 @@ export function KaprukaGenieApp() {
           >
             <div className="flex items-center justify-between border-b border-[#e8e2f2] p-3 font-black">
               <span className="flex items-center gap-2">
-                {text.modes} <Icon name="settings" className="h-4 w-4" />
+                Modes and Preferences <Icon name="settings" className="h-4 w-4" />
               </span>
               <button
                 type="button"
@@ -3314,11 +3782,31 @@ export function KaprukaGenieApp() {
               </div>
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
-                {recommendedProducts.length === 0 ? (
+                {recommendedProducts.length === 0 && isLoadingInitialProducts
+                  ? [0, 1, 2].map((item) => (
+                      <article
+                        key={item}
+                        className="overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                      >
+                        <div className="h-44 animate-pulse bg-[linear-gradient(90deg,#eee9f5_0%,#f8f5fc_45%,#eee9f5_100%)]" />
+                        <div className="grid gap-3 p-3">
+                          <div className="h-4 w-3/4 animate-pulse rounded-full bg-[#eee9f5]" />
+                          <div className="h-3 w-1/3 animate-pulse rounded-full bg-[#f0e9fb]" />
+                          <div className="grid gap-2">
+                            <div className="h-3 animate-pulse rounded-full bg-[#f0e9fb]" />
+                            <div className="h-3 w-5/6 animate-pulse rounded-full bg-[#f0e9fb]" />
+                          </div>
+                          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
+                            <div className="h-10 animate-pulse rounded-[10px] bg-[#ffdf00]/60" />
+                            <div className="h-10 w-16 animate-pulse rounded-[10px] bg-[#eee9f5]" />
+                          </div>
+                        </div>
+                      </article>
+                    ))
+                  : null}
+                {recommendedProducts.length === 0 && !isLoadingInitialProducts ? (
                   <div className="rounded-[20px] border border-dashed border-[#e8e2f2] bg-white p-4 text-sm leading-6 text-[#675f79] md:col-span-3">
-                    {isLoadingInitialProducts
-                      ? text.initialLoading
-                      : text.initialEmpty}
+                    {text.initialEmpty}
                   </div>
                 ) : null}
                 {visibleProducts.map((product) => (
@@ -3559,110 +4047,13 @@ export function KaprukaGenieApp() {
                 <span>{text.total}</span>
                 <strong>{formatPrice(totals.total)}</strong>
               </div>
-              <div className="mt-4 grid gap-2">
-                <input
-                  value={checkoutDetails.recipientName}
-                  onChange={(event) =>
-                    setCheckoutDetails((current) => ({
-                      ...current,
-                      recipientName: event.target.value,
-                    }))
-                  }
-                  placeholder={text.recipientName}
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <input
-                  value={checkoutDetails.recipientPhone}
-                  onChange={(event) =>
-                    setCheckoutDetails((current) => ({
-                      ...current,
-                      recipientPhone: event.target.value,
-                    }))
-                  }
-                  placeholder={text.recipientPhone}
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <input
-                  value={checkoutDetails.address}
-                  onChange={(event) =>
-                    setCheckoutDetails((current) => ({
-                      ...current,
-                      address: event.target.value,
-                    }))
-                  }
-                  placeholder={text.checkout}
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <input
-                  value={profile.city}
-                  onChange={(event) =>
-                    setProfile((current) => ({
-                      ...current,
-                      city: event.target.value,
-                    }))
-                  }
-                  placeholder={text.city}
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <input
-                  type="date"
-                  value={profile.date}
-                  onChange={(event) =>
-                    setProfile((current) => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <input
-                  value={checkoutDetails.senderName}
-                  onChange={(event) =>
-                    setCheckoutDetails((current) => ({
-                      ...current,
-                      senderName: event.target.value,
-                    }))
-                  }
-                  placeholder={text.senderName}
-                  className="h-10 rounded-[11px] border border-white/20 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <textarea
-                  value={checkoutDetails.instructions}
-                  onChange={(event) =>
-                    setCheckoutDetails((current) => ({
-                      ...current,
-                      instructions: event.target.value,
-                    }))
-                  }
-                  placeholder={text.deliveryInstructions}
-                  rows={2}
-                  className="resize-none rounded-[11px] border border-white/20 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/65"
-                />
-                <textarea
-                  value={giftMessage}
-                  onChange={(event) => setGiftMessage(event.target.value)}
-                  placeholder={text.giftMessageLabel}
-                  rows={3}
-                  className="resize-none rounded-[11px] border border-white/20 bg-white/10 px-3 py-2 text-sm text-white outline-none placeholder:text-white/65"
-                />
-              </div>
               <button
                 type="button"
-                onClick={() => void handleCreateOrderLink()}
-                className="mt-4 h-12 w-full rounded-[14px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e]"
+                onClick={openCheckoutModal}
+                className="mt-4 h-12 w-full cursor-pointer rounded-[14px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e] transition hover:bg-white"
               >
                 {text.createOrderLink}
               </button>
-              {checkoutUrl ? (
-                <a
-                  href={checkoutUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 grid h-11 place-items-center rounded-[14px] border border-white/20 text-sm font-black text-white"
-                >
-                  {text.openCheckout}
-                </a>
-              ) : null}
             </div>
             </div>
 
