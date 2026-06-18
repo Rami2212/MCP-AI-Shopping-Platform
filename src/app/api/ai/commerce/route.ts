@@ -12,6 +12,7 @@ import {
   readGroqError,
 } from "@/lib/groqHosted";
 import { createKaprukaMcpClient } from "@/lib/kaprukaMcp";
+import { toKaprukaLocationType } from "@/lib/deliveryLocations";
 import { KaprukaSearchProduct, Product, toProduct } from "@/lib/productCatalog";
 
 export const runtime = "nodejs";
@@ -110,6 +111,7 @@ type CheckoutDetails = {
   address?: string;
   giftMessage?: string;
   instructions?: string;
+  locationType?: string;
   recipientName?: string;
   recipientPhone?: string;
   senderName?: string;
@@ -159,6 +161,22 @@ function parseStringArray(value: unknown, maxItems: number) {
     .slice(0, maxItems);
 }
 
+function getLocalDateString(date = new Date()) {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 10);
+}
+
+function getNonPastDate(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const today = getLocalDateString();
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today
+    ? value
+    : today;
+}
+
 function parseProfile(value: unknown): ShoppingProfile {
   const record = asRecord(value);
 
@@ -166,7 +184,7 @@ function parseProfile(value: unknown): ShoppingProfile {
     budget: getString(record, "budget") ?? undefined,
     category: getString(record, "category") ?? undefined,
     city: getString(record, "city") ?? undefined,
-    date: getString(record, "date") ?? undefined,
+    date: getNonPastDate(getString(record, "date") ?? undefined),
     occasion: getString(record, "occasion") ?? undefined,
     recipient: getString(record, "recipient") ?? undefined,
   };
@@ -179,6 +197,7 @@ function parseCheckoutDetails(value: unknown): CheckoutDetails {
     address: getString(record, "address") ?? undefined,
     giftMessage: getString(record, "giftMessage") ?? undefined,
     instructions: getString(record, "instructions") ?? undefined,
+    locationType: getString(record, "locationType") ?? undefined,
     recipientName: getString(record, "recipientName") ?? undefined,
     recipientPhone: getString(record, "recipientPhone") ?? undefined,
     senderName: getString(record, "senderName") ?? undefined,
@@ -714,7 +733,7 @@ async function createCheckoutOrder(
       city,
       date: profile.date,
       instructions: checkout.instructions || null,
-      location_type: "house",
+      location_type: toKaprukaLocationType(checkout.locationType),
     },
     gift_message: checkout.giftMessage || null,
     recipient: {
@@ -1181,6 +1200,31 @@ export async function POST(request: Request) {
       .map((product) => toProduct(product))
       .filter((product): product is Product => product !== null);
 
+    if (task === "initial") {
+      const recommendations = fallbackRecommendations(products);
+
+      return NextResponse.json({
+        ...fallbackResponse,
+        analytics: {
+          buyBoxHealth: "Live Kapruka products loaded",
+          conversionSignal: "Starter catalog is ready",
+          nextBestAction: "Ask for the gift recipient and budget",
+          risk: "Live catalog results may change",
+        },
+        chips: ["Chocolate", "Roses", "Perfume", "Watch"],
+        delivery: null,
+        mcp: {
+          endpoint: "https://mcp.kapruka.com/mcp",
+          searchQuery,
+          tools: ["kapruka_search_products"],
+        },
+        mode,
+        products: products.slice(0, 3),
+        recommendations,
+        reply: "Kapruka MCP loaded live starter products.",
+      });
+    }
+
     if (task === "compare" && productIdsForCompare.length >= 2) {
       if (products.length < 2) {
         return NextResponse.json({
@@ -1250,31 +1294,6 @@ export async function POST(request: Request) {
           productSearch && hasBudgetFilter(productSearch.budgetFilter)
             ? getBudgetSearchReply(productSearch, 0)
             : `Kapruka MCP did not find products for "${searchQuery}".`,
-      });
-    }
-
-    if (task === "initial") {
-      const recommendations = fallbackRecommendations(products);
-
-      return NextResponse.json({
-        ...fallbackResponse,
-        analytics: {
-          buyBoxHealth: "Live Kapruka products loaded",
-          conversionSignal: "Starter catalog is ready",
-          nextBestAction: "Ask for the gift recipient and budget",
-          risk: "Live catalog results may change",
-        },
-        chips: ["Chocolate", "Roses", "Perfume", "Watch"],
-        delivery,
-        mcp: {
-          endpoint: "https://mcp.kapruka.com/mcp",
-          searchQuery,
-          tools: ["kapruka_search_products", "kapruka_check_delivery"],
-        },
-        mode,
-        products: products.slice(0, 3),
-        recommendations,
-        reply: "Kapruka MCP loaded live starter products.",
       });
     }
 
