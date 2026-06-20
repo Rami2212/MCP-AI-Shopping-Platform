@@ -10,6 +10,12 @@ export type Product = {
   eta: string;
   description: string;
   url: string;
+  apiDetails?: ProductApiDetail[];
+};
+
+export type ProductApiDetail = {
+  label: string;
+  value: string;
 };
 
 export type KaprukaSearchProduct = {
@@ -22,6 +28,7 @@ export type KaprukaSearchProduct = {
   image_url?: unknown;
   category?: unknown;
   url?: unknown;
+  [key: string]: unknown;
 };
 
 const FALLBACK_PRODUCT_IMAGE = "/product-images/gift-box.svg";
@@ -145,6 +152,42 @@ function getStockLabel(product: KaprukaSearchProduct) {
   return stockLevel ? `In stock (${stockLevel})` : "In stock";
 }
 
+function flattenApiDetails(
+  value: unknown,
+  path: string,
+  depth = 0,
+): ProductApiDetail[] {
+  if (value === null || value === undefined || value === "") {
+    return [];
+  }
+
+  if (typeof value !== "object") {
+    return [{ label: path, value: String(value) }];
+  }
+
+  if (depth >= 5) {
+    return [{ label: path, value: JSON.stringify(value) }];
+  }
+
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [String(index + 1), item] as const)
+    : Object.entries(value as Record<string, unknown>);
+
+  if (entries.length === 0) {
+    return [{ label: path, value: Array.isArray(value) ? "[]" : "{}" }];
+  }
+
+  return entries.flatMap(([key, item]) =>
+    flattenApiDetails(item, path ? `${path}.${key}` : key, depth + 1),
+  );
+}
+
+function getApiDetails(product: KaprukaSearchProduct) {
+  return Object.entries(product).flatMap(([key, value]) =>
+    flattenApiDetails(value, key),
+  );
+}
+
 export function toProduct(product: KaprukaSearchProduct): Product | null {
   const id = getString(product.id);
   const name = getString(product.name);
@@ -167,6 +210,7 @@ export function toProduct(product: KaprukaSearchProduct): Product | null {
     eta: "Delivery checked by Kapruka MCP",
     description: getString(product.summary) ?? "Live Kapruka catalog item.",
     url: getString(product.url) ?? "https://www.kapruka.com",
+    apiDetails: getApiDetails(product),
   };
 }
 

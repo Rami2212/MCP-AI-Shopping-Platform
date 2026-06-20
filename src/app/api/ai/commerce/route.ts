@@ -179,7 +179,7 @@ const fallbackResponse: CommerceResponse = {
     nextBestAction: "Search the live Kapruka catalog",
     risk: "Live catalog results may change",
   },
-  chips: ["Chocolate", "Roses", "Perfume", "Colombo delivery"],
+  chips: [],
   eventPlan: [],
   giftMessage: "",
   mode: "Smart Shopping",
@@ -211,6 +211,18 @@ function parseStringArray(value: unknown, maxItems: number) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, maxItems);
+}
+
+function parseChipArray(value: unknown, maxItems: number) {
+  return parseStringArray(value, maxItems)
+    .filter(
+      (chip) =>
+        !/\b(check delivery|delivery check|create order link|order link|open checkout|more like this|search products|track order)\b|බෙදාහැරීම|ඇණවුම්\s+සබැඳිය/iu.test(
+          chip,
+        ),
+    )
+    .map((chip) => chip.split(/\s+/u).slice(0, 3).join(" "))
+    .filter((chip, index, chips) => chips.indexOf(chip) === index);
 }
 
 function getLocalDateString(date = new Date()) {
@@ -556,6 +568,18 @@ function normalizeAnalyzedSearchQuery(
     !normalized ||
     /^(gift|gifts|other|present|presents)$/.test(normalized)
   ) {
+    const profileCategory = profile.category?.trim() ?? "";
+    const normalizedProfileCategory = profileCategory.toLowerCase();
+
+    if (
+      profileCategory &&
+      !/^(gift|gifts|other|present|presents)$/.test(
+        normalizedProfileCategory,
+      )
+    ) {
+      return giftTypeSearchTerms[normalizedProfileCategory] ?? profileCategory;
+    }
+
     return COMMON_GIFT_SEARCH_QUERY;
   }
 
@@ -576,25 +600,6 @@ function inferMessageIntent(query: string): MessageIntent {
   }
 
   return normalized ? "command" : "conversation";
-}
-
-function inferLanguage(message: string): DetectedLanguage {
-  if (/[\u0D80-\u0DFF]/u.test(message)) {
-    return "Sinhala";
-  }
-
-  const normalized = message.toLowerCase();
-  const singlishWords =
-    normalized.match(
-      /\b(mama|oya|oyata|oyage|api|ape|mokak|mokada|mona|kohomada|koheda|keeyada|puluwan|puluwanda|karanna|hoyanna|balanna|denna|ekak|ekata|wage|thiyenawa|innawa|nathuwa|kiyala)\b/g,
-    ) ?? [];
-
-  return singlishWords.length >= 2 ||
-    /\b(oyata|oyage|mokak|mokada|kohomada|puluwanda|karanna|hoyanna)\b/.test(
-      normalized,
-    )
-    ? "Singlish"
-    : "English";
 }
 
 function inferOccasionPreference(message: string) {
@@ -718,10 +723,7 @@ function parseMessageAnalysis(
         .slice(0, 80) || null;
 
     return {
-      detectedLanguage: normalizeDetectedLanguage(
-        getString(parsed, "detectedLanguage"),
-        fallbackLanguage,
-      ),
+      detectedLanguage: fallbackLanguage,
       intent,
       preferences: {
         budget: getNormalizedPreference(
@@ -765,13 +767,12 @@ async function getGroqMessageAnalysis(
         {
           role: "system",
           content:
-            "Analyze the user's Kapruka shopping request in English, Sinhala, or Singlish; do not inherit preferences from earlier messages. Detect the language actually used in latestUserMessage as English, Sinhala, or Singlish. Sinhala means Sinhala script; Singlish means Sinhala expressed mainly with Latin letters. The detected message language always overrides selectedLanguage. Classify the request as question, command, or conversation. Extract budget, recipient, occasion, and gift type only when explicitly present in the current request; otherwise return null for that preference, and never use Other as a default. Normalize only the four exact preset budget ranges to their matching option. Return budget Other only for an explicitly requested non-preset numeric budget; the original message retains its exact amount for catalog filtering. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. If the user requests any different specific gift or product type, set category to Other and preserve its short English name in requestedGiftType. Extract that exact requested type as a short English catalog searchQuery, translating Sinhala and Singlish when needed. Never use Other as searchQuery. Return JSON only and do not answer the user.",
+            "Analyze the user's Kapruka shopping request without detecting or inferring its language; selectedLanguage is authoritative and must remain unchanged. Do not inherit preferences from earlier messages. Classify the request as question, command, or conversation. Extract budget, recipient, occasion, and gift type only when explicitly present in the current request; otherwise return null for that preference, and never use Other as a default. Normalize only the four exact preset budget ranges to their matching option. Return budget Other only for an explicitly requested non-preset numeric budget; the original message retains its exact amount for catalog filtering. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. If the user requests any different specific gift or product type, set category to Other and preserve its short English name in requestedGiftType. Extract that exact requested type as a short English catalog searchQuery, translating when needed. Never use Other as searchQuery. Return JSON only and do not answer the user.",
         },
         {
           role: "user",
           content: JSON.stringify({
             expectedSchema: {
-              detectedLanguage: "English | Sinhala | Singlish",
               intent: "question | command | conversation",
               preferences: {
                 budget:
@@ -804,7 +805,10 @@ async function getGroqMessageAnalysis(
 
   const content = getAssistantContent((await response.json()) as unknown);
   return content
-    ? parseMessageAnalysis(content, inferLanguage(latestUserMessage))
+    ? parseMessageAnalysis(
+        content,
+        normalizeDetectedLanguage(language, "English"),
+      )
     : null;
 }
 
@@ -909,7 +913,7 @@ function parseCommerceResponse(
           fallbackResponse.analytics.nextBestAction,
         risk: getString(analytics, "risk") ?? fallbackResponse.analytics.risk,
       },
-      chips: parseStringArray(parsed?.chips, 6),
+      chips: parseChipArray(parsed?.chips, 6),
       eventPlan: parseStringArray(parsed?.eventPlan, 8),
       giftMessage: getString(parsed, "giftMessage") ?? "",
       mode: getString(parsed, "mode") ?? mode,
@@ -1245,7 +1249,7 @@ async function getGroqCommerce(
         {
           role: "system",
           content:
-            "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. Write every user-facing field, including reply, chips, recommendation reasons, gift messages, tracking, and event plan text, in replyLanguage: Sinhala uses Sinhala script and Singlish uses Latin script. Return JSON only.",
+            "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage: Sinhala uses Sinhala script and Singlish uses Latin script. Generate chips only from the current user message; never add generic delivery, checkout, order-link, or more-like-this chips. Every chip must contain at most three words. Return JSON only.",
         },
         {
           role: "user",
@@ -1258,7 +1262,7 @@ async function getGroqCommerce(
                 nextBestAction: "short action",
                 risk: "short risk",
               },
-              chips: ["guided next user selections"],
+              chips: ["selection up to 3 words"],
               eventPlan: ["optional checklist line"],
               giftMessage: "optional generated message",
               mode: "active mode",
@@ -1476,9 +1480,13 @@ export async function POST(request: Request) {
   const bodyRecord = asRecord(body);
   const task = getString(bodyRecord, "task") ?? "recommend";
   const mode = getString(bodyRecord, "mode") ?? "Smart Shopping";
-  const language = getString(bodyRecord, "language") ?? "English";
+  const language = normalizeDetectedLanguage(
+    getString(bodyRecord, "language"),
+    "English",
+  );
   const query = getString(bodyRecord, "query") ?? "";
   const userMessage = getString(bodyRecord, "userMessage") ?? query;
+  const preserveProfile = bodyRecord?.preserveProfile === true;
   const cartIds = parseStringArray(bodyRecord?.cartIds, 30);
   const requestedProductIds = parseStringArray(bodyRecord?.productIds, 3);
   const profile = parseProfile(bodyRecord?.profile);
@@ -1531,7 +1539,7 @@ export async function POST(request: Request) {
           risk: "Checkout link expires after 60 minutes",
         },
         checkout: order,
-        chips: ["Open checkout", "Track order", "Search more products"],
+        chips: [],
         mode,
         products: [],
         reply: order.checkout_url
@@ -1546,7 +1554,7 @@ export async function POST(request: Request) {
       if (!orderNumber) {
         return NextResponse.json({
           ...fallbackResponse,
-          chips: ["Enter order number", "Search products", "Check delivery"],
+          chips: [],
           mode,
           products: [],
           tracking:
@@ -1575,7 +1583,7 @@ export async function POST(request: Request) {
           nextBestAction: "Share the latest delivery status",
           risk: "Order data depends on paid order number",
         },
-        chips: ["Track another order", "Search products", "Check delivery"],
+        chips: [],
         mode,
         products: [],
         reply: aiSuggestion,
@@ -1599,17 +1607,13 @@ export async function POST(request: Request) {
             6000,
           ).catch(() => null)
         : null;
-    const locallyDetectedLanguage = inferLanguage(userMessage);
     const locallyDetectedBudget = inferBudgetPreference(userMessage);
     const locallyDetectedOccasion = inferOccasionPreference(userMessage);
     const locallyDetectedRecipient = inferRecipientPreference(userMessage);
     const resolvedMessageAnalysis: MessageAnalysis = messageAnalysis
       ? {
           ...messageAnalysis,
-          detectedLanguage:
-            locallyDetectedLanguage === "English"
-              ? messageAnalysis.detectedLanguage
-              : locallyDetectedLanguage,
+          detectedLanguage: language,
           preferences: {
             ...messageAnalysis.preferences,
             budget:
@@ -1621,7 +1625,7 @@ export async function POST(request: Request) {
           },
         }
       : {
-          detectedLanguage: locallyDetectedLanguage,
+          detectedLanguage: language,
           intent: inferMessageIntent(query),
           preferences: {
             budget: locallyDetectedBudget,
@@ -1632,9 +1636,11 @@ export async function POST(request: Request) {
           },
           searchQuery: null,
         };
-    const effectiveProfile = messageAnalysis
-      ? getFreshProfile(profile, resolvedMessageAnalysis.preferences)
-      : profile;
+    const effectiveProfile = preserveProfile
+      ? profile
+      : messageAnalysis
+        ? getFreshProfile(profile, resolvedMessageAnalysis.preferences)
+        : profile;
     const searchQuery =
       productIdsForCompare.length >= 2
         ? productIdsForCompare.join(" ")
@@ -1670,7 +1676,7 @@ export async function POST(request: Request) {
           nextBestAction: "Ask for the gift recipient and budget",
           risk: "Live catalog results may change",
         },
-        chips: ["Chocolate", "Roses", "Perfume", "Watch"],
+        chips: [],
         delivery: null,
         mcp: {
           endpoint: "https://mcp.kapruka.com/mcp",
@@ -1749,7 +1755,7 @@ export async function POST(request: Request) {
           nextBestAction: "Try another specific keyword",
           risk: "Kapruka MCP returned no purchasable products",
         },
-        chips: ["Chocolate", "Roses", "Perfume", "Watch"],
+        chips: [],
         delivery,
         mode,
         products: [],
@@ -1797,10 +1803,7 @@ export async function POST(request: Request) {
       task === "compare" ? products.slice(0, 3) : recommendationProducts;
     return NextResponse.json({
       ...commerce,
-      chips:
-        commerce.chips.length > 0
-          ? commerce.chips
-          : ["Check delivery", "Create order link", "More like this"],
+      chips: commerce.chips,
       delivery,
       detectedLanguage: resolvedMessageAnalysis.detectedLanguage,
       mcp: {

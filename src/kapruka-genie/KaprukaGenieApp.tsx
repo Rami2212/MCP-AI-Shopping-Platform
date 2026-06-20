@@ -1116,6 +1116,30 @@ async function clearStoredChatState() {
   database.close();
 }
 
+const rotatingActivityMessages: Record<Language, string[]> = {
+  English: [
+    "Understanding your request...",
+    "Checking your preferences...",
+    "Searching Kapruka products...",
+    "Matching the best options...",
+    "Preparing your reply...",
+  ],
+  Sinhala: [
+    "ඔබේ ඉල්ලීම තේරුම් ගනිමින්...",
+    "Preferences පරීක්ෂා කරමින්...",
+    "Kapruka products සොයමින්...",
+    "හොඳම ගැළපීම් තෝරමින්...",
+    "පිළිතුර සකස් කරමින්...",
+  ],
+  Singlish: [
+    "Oyage request eka balamin...",
+    "Preferences check karamin...",
+    "Kapruka products hoyamin...",
+    "Galapena options thoramin...",
+    "Reply eka hadamin...",
+  ],
+};
+
 export function KaprukaGenieApp() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -1176,6 +1200,7 @@ export function KaprukaGenieApp() {
   const [isInfoMenuOpen, setIsInfoMenuOpen] = useState(false);
   const [isBuyBoxOpen, setIsBuyBoxOpen] = useState(false);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [modeSessions, setModeSessions] = useState<Record<string, ModeSession>>({});
   const [compareIds, setCompareIds] = useState({ first: "", second: "" });
   const [compareRows, setCompareRows] = useState<CompareRow[]>([]);
@@ -1213,6 +1238,12 @@ export function KaprukaGenieApp() {
   >;
   const minimumDeliveryDate = getLocalDateString();
   const visibleProducts = recommendedProducts.slice(0, 3);
+  const isSelectedProductInCart = selectedProduct
+    ? buyBox.some((product) => product.id === selectedProduct.id)
+    : false;
+  const visibleReplyChips = messages.some((message) => message.role === "user")
+    ? chips.filter((chip) => !isRemovedGenericReplyChip(chip))
+    : chips;
   const latestAssistantMessageIndex = messages.reduce(
     (latestIndex, message, index) =>
       message.role === "assistant" ? index : latestIndex,
@@ -1234,14 +1265,25 @@ export function KaprukaGenieApp() {
   }
 
   function getChipLabel(chip: string) {
-    return (
+    const localizedLabel =
       starterChipOverrides[language][chip] ??
       starterChipLabels[language][chip] ??
       commonChipLabels[language][chip] ??
       dynamicChipLabels[language][chip] ??
       contextOptionLabels[language][chip] ??
       optionLabels[language][chip] ??
-      chip
+      chip;
+
+    return localizedLabel.trim().split(/\s+/u).slice(0, 3).join(" ");
+  }
+
+  function getGuidedReplyChips(generatedChips: string[] = []) {
+    return [...new Set([...generatedChips, "Next item", "Suggest more"])];
+  }
+
+  function isRemovedGenericReplyChip(chip: string) {
+    return /\b(check delivery|delivery check|create order link|order link|open checkout|more like this|search products|track order)\b|බෙදාහැරීම|ඇණවුම්\s+සබැඳිය/iu.test(
+      chip,
     );
   }
 
@@ -1349,7 +1391,7 @@ export function KaprukaGenieApp() {
 
   function getCommerceReply(data: CommerceResponse) {
     const reply = stripModelThinking(data.reply ?? "").trim();
-    const responseLanguage = data.detectedLanguage ?? language;
+    const responseLanguage = language;
 
     if (reply) {
       return reply;
@@ -1965,6 +2007,21 @@ export function KaprukaGenieApp() {
   }
 
   useEffect(() => {
+    if (!isSending) {
+      return;
+    }
+
+    const messagesForLanguage = rotatingActivityMessages[language];
+    let nextMessageIndex = 0;
+    const intervalId = window.setInterval(() => {
+      setActivityMessage(messagesForLanguage[nextMessageIndex]);
+      nextMessageIndex = (nextMessageIndex + 1) % messagesForLanguage.length;
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [isSending, language]);
+
+  useEffect(() => {
     const today = getLocalDateString();
 
     try {
@@ -2268,7 +2325,7 @@ export function KaprukaGenieApp() {
       );
     }
 
-    if (data.chips && data.chips.length > 0) {
+    if (data.chips) {
       setChips(data.chips);
     }
 
@@ -2307,9 +2364,6 @@ export function KaprukaGenieApp() {
       }));
     }
 
-    if (applyPreferenceUpdates && data.detectedLanguage) {
-      setLanguage(data.detectedLanguage);
-    }
   }
 
   async function runCommerce(
@@ -2318,6 +2372,7 @@ export function KaprukaGenieApp() {
     profileOverride = profile,
     applyPreferenceUpdates = true,
     userMessage = query,
+    preserveProfile = false,
   ) {
     const requestProfile = normalizeShoppingProfile(profileOverride);
     const controller = new AbortController();
@@ -2335,6 +2390,7 @@ export function KaprukaGenieApp() {
           language,
           mode,
           profile: requestProfile,
+          preserveProfile,
           query,
           task: getTaskForMode(mode),
           userMessage,
@@ -2431,6 +2487,7 @@ export function KaprukaGenieApp() {
           recipient: profile.recipient || null,
         },
         message: content,
+        selectedLanguage: language,
       }),
     });
     const data = (await response.json()) as ContextAnalysisResponse;
@@ -2473,6 +2530,7 @@ export function KaprukaGenieApp() {
       requestProfile,
       true,
       request,
+      true,
     );
 
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
@@ -2499,11 +2557,11 @@ export function KaprukaGenieApp() {
           content: `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
             planItems,
             0,
-            commerceData.detectedLanguage ?? language,
+            language,
           )}`,
         },
       ]);
-      setChips(["Next item", "Suggest more"]);
+      setChips(getGuidedReplyChips(commerceData.chips));
       setStatus("Guided suggestions ready.");
       return;
     }
@@ -2521,7 +2579,6 @@ export function KaprukaGenieApp() {
   async function handleFirstMessage(content: string) {
     setStatus("Groq is analyzing budget, recipient, and occasion.");
     let nextProfile: ShoppingProfile = profile;
-    let detectedLanguage = language;
 
     try {
       const analysis = await analyzeFirstMessage(content);
@@ -2532,8 +2589,6 @@ export function KaprukaGenieApp() {
         occasion: analysis.occasion ?? profile.occasion,
         recipient: analysis.recipient ?? profile.recipient,
       };
-      detectedLanguage = analysis.detectedLanguage ?? language;
-      setLanguage(detectedLanguage);
     } catch (error) {
       setStatus(`${getErrorMessage(error)} Choose context manually.`);
     }
@@ -2547,7 +2602,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    showContextPanel(nextProfile, detectedLanguage);
+    showContextPanel(nextProfile, language);
   }
 
   function selectContextOption(field: ContextField, value: string) {
@@ -2610,7 +2665,7 @@ export function KaprukaGenieApp() {
   }
 
   async function handleGuidedCustomMessage(content: string) {
-    setStatus("Kapruka MCP is finding related guided options.");
+    setStatus("Groq is answering and finding related guided options.");
     const commerceData = await runCommerce(content);
     setMessages((current) => [
       ...current,
@@ -2619,7 +2674,7 @@ export function KaprukaGenieApp() {
         content: getCommerceReply(commerceData),
       },
     ]);
-    setChips(["Next item", "Suggest more"]);
+    setChips(getGuidedReplyChips(commerceData.chips));
     setStatus("Related guided options loaded.");
   }
 
@@ -3196,10 +3251,6 @@ export function KaprukaGenieApp() {
         return;
       }
 
-      if (data.language) {
-        setLanguage("English");
-      }
-
       setInput("");
       await submitText(transcript);
       setStatus("Groq voice transcript processed.");
@@ -3213,7 +3264,7 @@ export function KaprukaGenieApp() {
     }
   }
 
-  function speakMessage(messageText: string) {
+  async function speakMessage(messageText: string) {
     if (!messageText.trim() || isSpeaking) {
       return;
     }
@@ -3227,15 +3278,41 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(
-      messageText.trim().slice(0, 1200),
-    );
-    const voices = window.speechSynthesis.getVoices();
     const femaleVoicePattern =
-      /female|aria|ava|fiona|hazel|jenny|karen|libby|moira|samantha|serena|sonia|susan|tessa|victoria|zira/i;
+      /female|amy|aria|ava|emma|fiona|hazel|ivy|joanna|jenny|karen|kendra|kimberly|libby|maisie|michelle|moira|natasha|olivia|salli|samantha|sara|serena|shelley|sonia|susan|tessa|victoria|zira|google us english/i;
     const naturalVoicePattern = /enhanced|google|microsoft|natural|neural|premium/i;
-    const englishVoices = voices.filter((voice) =>
-      voice.lang.toLowerCase().startsWith("en"),
+    const speechSynthesis = window.speechSynthesis;
+    const hasFemaleEnglishVoice = (voices: SpeechSynthesisVoice[]) =>
+      voices.some(
+        (voice) =>
+          voice.lang.toLowerCase().startsWith("en") &&
+          femaleVoicePattern.test(`${voice.name} ${voice.voiceURI}`),
+      );
+
+    speechSynthesis.cancel();
+    setIsSpeaking(true);
+    setStatus("Loading a female English voice.");
+
+    let voices = speechSynthesis.getVoices();
+    if (!hasFemaleEnglishVoice(voices)) {
+      await new Promise<void>((resolve) => {
+        const finishLoading = () => {
+          window.clearTimeout(timeoutId);
+          speechSynthesis.removeEventListener("voiceschanged", finishLoading);
+          resolve();
+        };
+        const timeoutId = window.setTimeout(finishLoading, 1200);
+        speechSynthesis.addEventListener("voiceschanged", finishLoading, {
+          once: true,
+        });
+      });
+      voices = speechSynthesis.getVoices();
+    }
+
+    const femaleEnglishVoices = voices.filter(
+      (voice) =>
+        voice.lang.toLowerCase().startsWith("en") &&
+        femaleVoicePattern.test(`${voice.name} ${voice.voiceURI}`),
     );
     const getVoiceScore = (voice: SpeechSynthesisVoice) => {
       const locale = voice.lang.toLowerCase();
@@ -3257,17 +3334,25 @@ export function KaprukaGenieApp() {
         (voice.default ? 2 : 0)
       );
     };
-    const preferredVoice = [...englishVoices].sort(
+    const preferredVoice = [...femaleEnglishVoices].sort(
       (firstVoice, secondVoice) =>
         getVoiceScore(secondVoice) - getVoiceScore(firstVoice),
     )[0];
 
-    utterance.lang = preferredVoice?.lang ?? "en-US";
+    if (!preferredVoice) {
+      setIsSpeaking(false);
+      setStatus("No female English voice is installed in this browser.");
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(
+      messageText.trim().slice(0, 1200),
+    );
+
+    utterance.lang = preferredVoice.lang;
     utterance.rate = 0.96;
     utterance.pitch = 1.05;
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
-    }
+    utterance.voice = preferredVoice;
 
     utterance.onend = () => {
       setIsSpeaking(false);
@@ -3278,10 +3363,8 @@ export function KaprukaGenieApp() {
       setStatus("The browser could not read this message aloud.");
     };
 
-    window.speechSynthesis.cancel();
-    setIsSpeaking(true);
     setStatus("Reading the latest message aloud.");
-    window.speechSynthesis.speak(utterance);
+    speechSynthesis.speak(utterance);
   }
 
   function renderContextPanel(isActive: boolean) {
@@ -3447,6 +3530,128 @@ export function KaprukaGenieApp() {
           </div>
         </section>
       </div>
+      {selectedProduct ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#161226]/45 px-4 py-6 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Close product details"
+            onClick={() => setSelectedProduct(null)}
+            className="absolute inset-0 cursor-default"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-details-title"
+            className="relative z-10 max-h-full w-full max-w-3xl overflow-auto rounded-[22px] border border-[#e8e2f2] bg-white shadow-[0_24px_70px_rgba(44,22,75,0.28)]"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[#e8e2f2] p-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#7b3fb1]">
+                  Product details
+                </p>
+                <h2
+                  id="product-details-title"
+                  className="mt-1 text-xl font-black text-[#3f246d]"
+                >
+                  {selectedProduct.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[12px] border border-[#e8e2f2] text-[#3f246d]"
+                aria-label="Close product details"
+              >
+                <Icon name="x" className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,280px)_1fr]">
+              <div className="relative aspect-square overflow-hidden rounded-[18px] bg-[#eee9f5]">
+                <Image
+                  src={selectedProduct.imageUrl}
+                  alt={selectedProduct.name}
+                  fill
+                  unoptimized
+                  sizes="280px"
+                  className="object-cover"
+                />
+              </div>
+              <div className="grid content-start gap-4">
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Product ID</dt>
+                    <dd className="mt-1 break-all font-black text-[#3f246d]">
+                      {selectedProduct.id}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Category</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.category}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Price</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {formatPrice(
+                        selectedProduct.price,
+                        selectedProduct.currency,
+                      )}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Availability</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.stockLabel}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Stock count</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.stock}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Delivery</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.eta}
+                    </dd>
+                  </div>
+                </dl>
+                <div>
+                  <h3 className="text-sm font-black text-[#3f246d]">
+                    Description
+                  </h3>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#675f79]">
+                    {selectedProduct.description}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={isSelectedProductInCart}
+                    onClick={() => addToBuyBox(selectedProduct)}
+                    className="h-11 rounded-[12px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-default disabled:opacity-60"
+                  >
+                    {isSelectedProductInCart
+                      ? "Added to Cart"
+                      : text.addToBuyBox}
+                  </button>
+                  <a
+                    href={selectedProduct.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="grid h-11 place-items-center rounded-[12px] border border-[#e8e2f2] px-4 text-sm font-black text-[#3f246d] transition hover:bg-[#f6f4fb]"
+                  >
+                    Open on Kapruka
+                  </a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {isCheckoutModalOpen ? (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-[#161226]/45 px-4 py-6 backdrop-blur-sm">
           <button
@@ -3953,7 +4158,7 @@ export function KaprukaGenieApp() {
                       {isLatestAssistantMessage && language === "English" ? (
                         <button
                           type="button"
-                          onClick={() => speakMessage(message.content)}
+                          onClick={() => void speakMessage(message.content)}
                           disabled={isSpeaking}
                           className="grid h-9 w-9 flex-none place-items-center rounded-full border border-[#e8e2f2] bg-white text-[#3f246d] shadow-[0_6px_14px_rgba(44,22,75,0.08)] transition hover:border-[#3f246d] disabled:opacity-40"
                           title={readAloudTitle}
@@ -3976,7 +4181,7 @@ export function KaprukaGenieApp() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2">
-                {chips.map((chip) => (
+                {visibleReplyChips.map((chip) => (
                   <button
                     key={chip}
                     type="button"
@@ -4060,14 +4265,13 @@ export function KaprukaGenieApp() {
                         >
                           {text.addToBuyBox}
                         </button>
-                        <a
-                          href={product.url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProduct(product)}
                           className="grid h-10 place-items-center rounded-[10px] border border-[#e8e2f2] px-3 text-sm font-black text-[#3f246d]"
                         >
                           {text.productView}
-                        </a>
+                        </button>
                       </div>
                     </div>
                   </article>

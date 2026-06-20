@@ -225,25 +225,6 @@ function normalizeRecipient(value: string | null) {
   );
 }
 
-function inferLanguage(message: string): DetectedLanguage {
-  if (/[\u0D80-\u0DFF]/u.test(message)) {
-    return "Sinhala";
-  }
-
-  const normalized = message.toLowerCase();
-  const singlishWords =
-    normalized.match(
-      /\b(mama|oya|oyata|oyage|api|ape|mokak|mokada|mona|kohomada|koheda|keeyada|puluwan|puluwanda|karanna|hoyanna|balanna|denna|ekak|ekata|wage|thiyenawa|innawa|nathuwa|kiyala)\b/g,
-    ) ?? [];
-
-  return singlishWords.length >= 2 ||
-    /\b(oyata|oyage|mokak|mokada|kohomada|puluwanda|karanna|hoyanna)\b/.test(
-      normalized,
-    )
-    ? "Singlish"
-    : "English";
-}
-
 function normalizeDetectedLanguage(
   value: string | null,
 ): DetectedLanguage | null {
@@ -281,11 +262,14 @@ function inferGiftType(message: string) {
   return null;
 }
 
-function inferLocalAnalysis(message: string): LocalAnalysis {
+function inferLocalAnalysis(
+  message: string,
+  selectedLanguage: DetectedLanguage,
+): LocalAnalysis {
   return {
     budget: inferBudget(message),
     category: inferGiftType(message),
-    detectedLanguage: inferLanguage(message),
+    detectedLanguage: selectedLanguage,
     occasion: inferOccasion(message),
     recipient: inferRecipient(message),
     requestedGiftType: null,
@@ -306,13 +290,7 @@ function getKnownContext(
       localAnalysis.category ??
       analysis.category ??
       getString(context, "category"),
-    detectedLanguage:
-      localAnalysis.detectedLanguage &&
-      localAnalysis.detectedLanguage !== "English"
-        ? localAnalysis.detectedLanguage
-        : (analysis.detectedLanguage ??
-          localAnalysis.detectedLanguage ??
-          "English"),
+    detectedLanguage: localAnalysis.detectedLanguage ?? "English",
     occasion:
       localAnalysis.occasion ??
       analysis.occasion ??
@@ -400,6 +378,9 @@ export async function POST(request: Request) {
   const bodyRecord = asRecord(body);
   const message = getString(bodyRecord, "message");
   const context = asRecord(bodyRecord?.context);
+  const selectedLanguage =
+    normalizeDetectedLanguage(getString(bodyRecord, "selectedLanguage")) ??
+    "English";
 
   if (!message) {
     return NextResponse.json(
@@ -408,7 +389,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const localAnalysis = inferLocalAnalysis(message);
+  const localAnalysis = inferLocalAnalysis(message, selectedLanguage);
   const apiKey = getGroqApiKey();
 
   if (!apiKey) {
@@ -441,7 +422,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You analyze the latest Kapruka Genie shopping message. Detect the language actually used in this message as English, Sinhala, or Singlish. Sinhala means Sinhala script; Singlish means Sinhala expressed mainly with Latin letters. The message language always has priority over any selected UI language. Extract budget, recipient, occasion, and gift type only when explicitly present in the current message. Return null for any absent preference; never use Other as a default. Normalize only the four exact preset budget ranges to their matching option, and return budget Other only for an explicitly requested non-preset numeric budget. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Values stated in the current message replace conflicting existing context; existing context only fills details omitted from the message. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. For any other specific gift or product type, return category Other and preserve its short English name in requestedGiftType. Return JSON only.",
+            "You analyze the latest Kapruka Genie shopping message. Do not detect or infer the user's language. selectedLanguage is authoritative. Extract budget, recipient, occasion, and gift type only when explicitly present in the current message. Return null for any absent preference; never use Other as a default. Normalize only the four exact preset budget ranges to their matching option, and return budget Other only for an explicitly requested non-preset numeric budget. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Values stated in the current message replace conflicting existing context; existing context only fills details omitted from the message. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. For any other specific gift or product type, return category Other and preserve its short English name in requestedGiftType. Return JSON only.",
         },
         {
           role: "user",
@@ -465,6 +446,7 @@ export async function POST(request: Request) {
               requestedGiftType: "specific English gift type or null",
             },
             message,
+            selectedLanguage,
             normalizedOptions: {
               budget: [
                 "Under Rs. 2,500",

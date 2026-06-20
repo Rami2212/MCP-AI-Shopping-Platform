@@ -12,6 +12,11 @@ export const runtime = "nodejs";
 
 const DEFAULT_MODEL = "qwen/qwen3-32b";
 const MAX_CONTEXT_MESSAGES = 10;
+type SelectedLanguage = "English" | "Sinhala" | "Singlish";
+
+function getSelectedLanguage(value: string | null): SelectedLanguage {
+  return value === "Sinhala" || value === "Singlish" ? value : "English";
+}
 
 function isChatRole(role: unknown): role is ChatMessage["role"] {
   return role === "system" || role === "user" || role === "assistant";
@@ -81,7 +86,12 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as unknown;
-  const messages = parseMessages(asRecord(body)?.messages);
+  const bodyRecord = asRecord(body);
+  const messages = parseMessages(bodyRecord?.messages);
+  const selectedLanguage = getSelectedLanguage(
+    getString(bodyRecord, "selectedLanguage") ??
+      getString(bodyRecord, "language"),
+  );
 
   if (!messages.some((message) => message.role === "user")) {
     return NextResponse.json(
@@ -93,8 +103,7 @@ export async function POST(request: Request) {
   const model = process.env.GROQ_REPLY_MODEL ?? DEFAULT_MODEL;
   const systemMessage: ChatMessage = {
     role: "system",
-    content:
-      "You are a concise multilingual shopping assistant for testing an ecommerce AI website. Help with product discovery, comparisons, sizing, returns, and checkout questions. Always reply in the language used by the latest user message, even when a different UI language was previously selected. Use Sinhala script for Sinhala and Latin-script Singlish when the user writes Singlish. Do not reveal reasoning, analysis, scratchpad text, or <think> blocks. Reply with one short paragraph only: no bullets, numbered lists, product names, product IDs, prices, or written product recommendations because the UI shows products separately as cards.",
+    content: `You are a concise multilingual shopping assistant for testing an ecommerce AI website. Help with product discovery, comparisons, sizing, returns, and checkout questions. Always reply in the selected language: ${selectedLanguage}. Never detect or switch language based on the user's message. Use Sinhala script for selected Sinhala and Latin-script Singlish for selected Singlish. Do not reveal reasoning, analysis, scratchpad text, or <think> blocks. Reply with one short paragraph only: no bullets, numbered lists, product names, product IDs, prices, or written product recommendations because the UI shows products separately as cards.`,
   };
 
   const groq = await fetchGroqChatWithFallback(apiKey, {

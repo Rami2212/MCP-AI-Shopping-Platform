@@ -6,9 +6,14 @@ export const GROQ_CHAT_COMPLETIONS_URL =
 export const GROQ_TRANSCRIPTIONS_URL =
   "https://api.groq.com/openai/v1/audio/transcriptions";
 
-const DEFAULT_TEXT_BACKUP_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_TEXT_BACKUP_MODELS = [
+  "llama-3.1-8b-instant",
+  "qwen/qwen3-32b",
+  "openai/gpt-oss-20b",
+];
 const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
-const MAX_MODEL_ATTEMPTS = 2;
+const DEFAULT_TOTAL_TIMEOUT_MS = 25000;
+const MAX_MODEL_ATTEMPTS = 4;
 
 type GroqChatPayload = Record<string, unknown> & {
   model: string;
@@ -44,6 +49,16 @@ function getRequestTimeoutMs() {
   return Math.min(30000, Math.max(3000, Math.round(configuredTimeout)));
 }
 
+function getTotalTimeoutMs() {
+  const configuredTimeout = Number(process.env.GROQ_TOTAL_TIMEOUT_MS);
+
+  if (!Number.isFinite(configuredTimeout)) {
+    return DEFAULT_TOTAL_TIMEOUT_MS;
+  }
+
+  return Math.min(60000, Math.max(10000, Math.round(configuredTimeout)));
+}
+
 function createGroqFailureResponse(status: number, message: string) {
   return new Response(JSON.stringify({ error: { message } }), {
     status,
@@ -61,7 +76,7 @@ export async function fetchGroqChatWithFallback(
       ? [
           process.env.GROQ_BACKUP_MODEL,
           ...parseModelList(process.env.GROQ_BACKUP_MODELS),
-          DEFAULT_TEXT_BACKUP_MODEL,
+          ...DEFAULT_TEXT_BACKUP_MODELS,
         ]
       : backupModels;
   const models = [payload.model, ...configuredBackups]
@@ -70,10 +85,19 @@ export async function fetchGroqChatWithFallback(
     .filter((model, index, candidates) => candidates.indexOf(model) === index)
     .slice(0, MAX_MODEL_ATTEMPTS);
   let latestRetryableFailure: GroqChatFallbackResult | null = null;
+  const startedAt = Date.now();
 
   for (const [index, model] of models.entries()) {
+    const remainingTime = getTotalTimeoutMs() - (Date.now() - startedAt);
+    if (remainingTime <= 0) {
+      break;
+    }
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), getRequestTimeoutMs());
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      Math.min(getRequestTimeoutMs(), remainingTime),
+    );
     let response: Response;
 
     try {
@@ -118,7 +142,13 @@ export async function fetchGroqChatWithFallback(
   }
 
   if (latestRetryableFailure) {
-    return latestRetryableFailure;
+    return {
+      model: latestRetryableFailure.model,
+      response: createGroqFailureResponse(
+        503,
+        "Groq is temporarily unavailable after automatic model retries. Please try again shortly.",
+      ),
+    };
   }
 
   throw new Error("No Groq chat model is configured.");

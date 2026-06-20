@@ -41,14 +41,16 @@ GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
 GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
 GROQ_BACKUP_MODEL=llama-3.1-8b-instant
 GROQ_REQUEST_TIMEOUT_MS=10000
+GROQ_TOTAL_TIMEOUT_MS=25000
 KAPRUKA_MCP_URL=https://mcp.kapruka.com/mcp
 GROQ_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
 GROQ_VISION_BACKUP_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
 ```
 
 HTTP 429 and temporary Groq failures automatically retry with backup models.
-Each model attempt is time-limited, and each request tries only the primary
-model plus one backup. Vision uses a separate vision-capable backup model.
+Each model attempt and the complete retry chain are time-limited. Text requests
+can try the configured backup followed by built-in 8B, Qwen, and GPT-OSS
+fallbacks. Vision uses a separate vision-capable backup model.
 
 Voice recognition and transcription always use Groq
 `whisper-large-v3-turbo`, restricted to English voice search. The model cannot
