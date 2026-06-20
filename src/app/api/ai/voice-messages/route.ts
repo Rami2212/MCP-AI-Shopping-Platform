@@ -1,38 +1,93 @@
 import { NextResponse } from "next/server";
-import { asRecord, getString } from "@/lib/aiPayload";
 import {
   getGroqApiKey,
   getMissingGroqKeyMessage,
-  GROQ_SPEECH_URL,
   GROQ_TRANSCRIPTIONS_URL,
   readGroqError,
 } from "@/lib/groqHosted";
 
 export const runtime = "nodejs";
 
-const DEFAULT_STT_MODEL = "whisper-large-v3-turbo";
-const DEFAULT_TTS_MODEL = "canopylabs/orpheus-v1-english";
-const DEFAULT_TTS_VOICE = "hannah";
+const STT_MODEL = "whisper-large-v3-turbo";
 const MAX_AUDIO_UPLOAD_BYTES = 12 * 1024 * 1024;
-const MAX_SPEECH_INPUT_LENGTH = 1200;
-
-function getText(value: unknown) {
-  return getString(asRecord(value), "text")?.trim() ?? null;
-}
+type TranscriptionLanguage = "en";
 
 function getTranscript(payload: unknown) {
-  return getString(asRecord(payload), "text")?.trim() ?? null;
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const text = Reflect.get(payload, "text");
+  return typeof text === "string" ? text.trim() || null : null;
+}
+
+function getDetectedLanguage(payload: unknown): TranscriptionLanguage | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const language = Reflect.get(payload, "language");
+  if (typeof language !== "string") {
+    return null;
+  }
+
+  const normalizedLanguage = language.trim().toLowerCase();
+  if (normalizedLanguage === "en" || normalizedLanguage === "english") {
+    return "en";
+  }
+
+  return null;
+}
+
+function isSupportedLanguage(value: string): value is TranscriptionLanguage {
+  return value === "en";
+}
+
+function isRecognizedTranscript(transcript: string) {
+  const normalizedTranscript = transcript.trim();
+
+  if (
+    !normalizedTranscript ||
+    /^(?:[.?!,\-–—…\s]+|\[(?:inaudible|music|noise|silence)[^\]]*\]|\((?:inaudible|music|noise|silence)[^)]*\))$/iu.test(
+      normalizedTranscript,
+    )
+  ) {
+    return false;
+  }
+
+  return /[A-Za-z]{2}/u.test(normalizedTranscript);
+}
+
+function retryResponse() {
+  return NextResponse.json(
+    {
+      error:
+        "We couldn't clearly recognize that voice message. Please try again in English.",
+      model: STT_MODEL,
+      retry: true,
+    },
+    { status: 422 },
+  );
 }
 
 async function transcribeAudio(request: Request) {
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("audio");
   const languageValue = formData?.get("language");
-  const language = typeof languageValue === "string" ? languageValue : null;
 
   if (!(file instanceof File)) {
     return NextResponse.json(
       { error: "Record or upload an audio file." },
+      { status: 400 },
+    );
+  }
+
+  if (
+    typeof languageValue !== "string" ||
+    !isSupportedLanguage(languageValue)
+  ) {
+    return NextResponse.json(
+      { error: "Voice search supports English only." },
       { status: 400 },
     );
   }
@@ -44,14 +99,11 @@ async function transcribeAudio(request: Request) {
     );
   }
 
-  const model = process.env.GROQ_STT_MODEL ?? DEFAULT_STT_MODEL;
+  const model = STT_MODEL;
   const groqFormData = new FormData();
   groqFormData.append("file", file, file.name || "kapruka-voice.webm");
   groqFormData.append("model", model);
-  groqFormData.append("response_format", "json");
-  if (language) {
-    groqFormData.append("language", language);
-  }
+  groqFormData.append("response_format", "verbose_json");
 
   const response = await fetch(GROQ_TRANSCRIPTIONS_URL, {
     method: "POST",
@@ -71,69 +123,32 @@ async function transcribeAudio(request: Request) {
 
   const payload = (await response.json()) as unknown;
   const transcript = getTranscript(payload);
+  const detectedLanguage = getDetectedLanguage(payload);
 
-  if (!transcript) {
-    return NextResponse.json(
-      { error: "Groq returned an empty transcript.", model },
-      { status: 502 },
-    );
+  if (
+    !transcript ||
+    !detectedLanguage ||
+    !isRecognizedTranscript(transcript)
+  ) {
+    return retryResponse();
   }
 
-  return NextResponse.json({ model, transcript });
-}
-
-async function speakText(request: Request) {
-  const body = (await request.json().catch(() => null)) as unknown;
-  const text = getText(body);
-
-  if (!text) {
-    return NextResponse.json(
-      { error: "Send text to convert to speech." },
-      { status: 400 },
-    );
-  }
-
-  if (text.length > MAX_SPEECH_INPUT_LENGTH) {
-    return NextResponse.json(
-      { error: "Text is too long. Keep Groq TTS input under 1200 characters." },
-      { status: 413 },
-    );
-  }
-
-  const model = process.env.GROQ_TTS_MODEL ?? DEFAULT_TTS_MODEL;
-  const voice = process.env.GROQ_TTS_VOICE ?? DEFAULT_TTS_VOICE;
-  const response = await fetch(GROQ_SPEECH_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${getGroqApiKey()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      input: text,
-      voice,
-      response_format: "wav",
-    }),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    return NextResponse.json(
-      { error: await readGroqError(response), model, voice },
-      { status: response.status },
-    );
-  }
-
-  return new Response(await response.arrayBuffer(), {
-    headers: {
-      "Content-Type": response.headers.get("Content-Type") ?? "audio/wav",
-      "X-Groq-Model": model,
-      "X-Groq-Voice": voice,
-    },
-  });
+  return NextResponse.json({ language: detectedLanguage, model, transcript });
 }
 
 export async function POST(request: Request) {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (!contentType.includes("multipart/form-data")) {
+    return NextResponse.json(
+      {
+        error:
+          "This route only transcribes audio. Read-aloud uses the browser speech engine.",
+      },
+      { status: 415 },
+    );
+  }
+
   if (!getGroqApiKey()) {
     return NextResponse.json(
       { error: getMissingGroqKeyMessage() },
@@ -141,11 +156,5 @@ export async function POST(request: Request) {
     );
   }
 
-  const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("multipart/form-data")) {
-    return transcribeAudio(request);
-  }
-
-  return speakText(request);
+  return transcribeAudio(request);
 }

@@ -1,8 +1,8 @@
 # AI Usage
 
-This project uses Groq for language, context, commerce reasoning, vision, speech-to-text, and text-to-speech tasks.
+This project uses Groq for language, context, commerce reasoning, vision, and speech-to-text tasks.
 
-Media routes use dedicated Groq model slugs because image, speech-to-text, and text-to-speech use different endpoint capabilities.
+Media routes use dedicated Groq model slugs because image and speech-to-text use different endpoint capabilities. Read-aloud uses the browser speech engine and does not call an AI model.
 
 | Task | Where Used | API Route | Model Used                                                                                      |
 | --- | --- | --- |-------------------------------------------------------------------------------------------------|
@@ -12,8 +12,8 @@ Media routes use dedicated Groq model slugs because image, speech-to-text, and t
 | Product comparison | User enters product IDs; the commerce route searches Kapruka MCP for product values and uses AI only for the AI suggestion field. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Order tracking AI suggestion | Kapruka MCP returns the tracking result, then AI writes a short next-step suggestion from that result. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Image search analysis | Analyzes uploaded image content to create product search hints. The raw analysis is not shown to the user. | `src/app/api/ai/image-analysis/route.ts` | `GROQ_VISION_MODEL`, otherwise `meta-llama/llama-4-scout-17b-16e-instruct` |
-| Voice transcription | Converts recorded voice input into text for product search. The transcript is not shown to the user. | `src/app/api/ai/voice-messages/route.ts` | `GROQ_STT_MODEL`, otherwise `whisper-large-v3-turbo` |
-| Voice reply output | Converts the last assistant reply into speech. | `src/app/api/ai/voice-messages/route.ts` | `GROQ_TTS_MODEL`, otherwise `canopylabs/orpheus-v1-english` |
+| Voice recognition and transcription | Converts recognized English voice input into text for product search. The recording popup states that voice search is English-only; unrecognized audio produces a retry message. | `src/app/api/ai/voice-messages/route.ts` | `whisper-large-v3-turbo` (fixed) |
+| Voice reply output | Reads the latest English assistant message aloud using a preferred female English browser voice. The speaker is hidden in Sinhala and Singlish. | `src/kapruka-genie/KaprukaGenieApp.tsx` | Browser Speech Synthesis API; no AI model |
 
 ## Non-AI MCP Tasks
 

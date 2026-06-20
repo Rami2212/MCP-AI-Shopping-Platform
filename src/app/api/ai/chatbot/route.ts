@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import type { ChatMessage } from "@/lib/aiPayload";
 import { asRecord, getString, stripModelThinking } from "@/lib/aiPayload";
 import {
+  fetchGroqChatWithFallback,
   getGroqApiKey,
   getMissingGroqKeyMessage,
-  GROQ_CHAT_COMPLETIONS_URL,
   readGroqError,
 } from "@/lib/groqHosted";
 
@@ -94,27 +94,21 @@ export async function POST(request: Request) {
   const systemMessage: ChatMessage = {
     role: "system",
     content:
-      "You are a concise multilingual shopping assistant for testing an ecommerce AI website. Help with product discovery, comparisons, sizing, returns, and checkout questions. Reply in the requested language when possible, including Sinhala in Sinhala script and Singlish when requested. Do not reveal reasoning, analysis, scratchpad text, or <think> blocks. Do not list product names, product IDs, prices, or product recommendations in chat text; the UI always shows products separately as cards.",
+      "You are a concise multilingual shopping assistant for testing an ecommerce AI website. Help with product discovery, comparisons, sizing, returns, and checkout questions. Always reply in the language used by the latest user message, even when a different UI language was previously selected. Use Sinhala script for Sinhala and Latin-script Singlish when the user writes Singlish. Do not reveal reasoning, analysis, scratchpad text, or <think> blocks. Reply with one short paragraph only: no bullets, numbered lists, product names, product IDs, prices, or written product recommendations because the UI shows products separately as cards.",
   };
 
-  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [systemMessage, ...messages],
-      max_completion_tokens: 900,
-      temperature: 0.4,
-    }),
-    cache: "no-store",
+  const groq = await fetchGroqChatWithFallback(apiKey, {
+    model,
+    messages: [systemMessage, ...messages],
+    max_completion_tokens: 900,
+    temperature: 0.4,
   });
+  const response = groq.response;
+  const usedModel = groq.model;
 
   if (!response.ok) {
     return NextResponse.json(
-      { error: await readGroqError(response), model },
+      { error: await readGroqError(response), model: usedModel },
       { status: response.status },
     );
   }
@@ -124,10 +118,10 @@ export async function POST(request: Request) {
 
   if (!reply) {
     return NextResponse.json(
-      { error: "Groq returned an empty chat response.", model },
+      { error: "Groq returned an empty chat response.", model: usedModel },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ reply, model });
+  return NextResponse.json({ reply, model: usedModel });
 }
