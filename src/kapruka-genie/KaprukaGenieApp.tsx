@@ -19,6 +19,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   retryContext?: boolean;
+  retryReason?: "timeout";
   retryText?: string;
   variant?: "context-panel";
 };
@@ -1241,6 +1242,8 @@ export function KaprukaGenieApp() {
   >;
   const minimumDeliveryDate = getLocalDateString();
   const visibleProducts = recommendedProducts.slice(0, 3);
+  const shouldShowProductSuggestions =
+    conversationStage !== "collecting-context";
   const isSelectedProductInCart = selectedProduct
     ? buyBox.some((product) => product.id === selectedProduct.id)
     : false;
@@ -1414,37 +1417,23 @@ export function KaprukaGenieApp() {
   function getRetryableFailureType(error: unknown) {
     const message = getErrorMessage(error).toLowerCase();
 
-    if (
-      /timed?\s*out|timeout|temporarily unavailable|automatic model retries/.test(
-        message,
-      )
-    ) {
+    if (/timed?\s*out|timeout/.test(message)) {
       return "timeout" as const;
-    }
-
-    if (/empty response|empty .*response|unexpected end of json/.test(message)) {
-      return "empty" as const;
     }
 
     return null;
   }
 
-  function getRetryFailureReply(type: "timeout" | "empty") {
+  function getRetryFailureReply() {
     if (language === "Sinhala") {
-      return type === "timeout"
-        ? "ඉල්ලීමට නියමිත වේලාව තුළ පිළිතුරක් ලැබුණේ නැහැ. නැවත උත්සාහ කරන්න."
-        : "හිස් පිළිතුරක් ලැබුණා. නැවත උත්සාහ කරන්න.";
+      return "ඉල්ලීමට නියමිත වේලාව තුළ පිළිතුරක් ලැබුණේ නැහැ. නැවත උත්සාහ කරන්න.";
     }
 
     if (language === "Singlish") {
-      return type === "timeout"
-        ? "Request eka time out una. Ayeth try karanna."
-        : "Empty response ekak labuna. Ayeth try karanna.";
+      return "Request eka time out una. Ayeth try karanna.";
     }
 
-    return type === "timeout"
-      ? "The request timed out. Please try again."
-      : "I received an empty response. Please try again.";
+    return "The request timed out. Please try again.";
   }
 
   function addRetryFailure(
@@ -1458,11 +1447,12 @@ export function KaprukaGenieApp() {
       return false;
     }
 
-    const content = getRetryFailureReply(failureType);
+    const content = getRetryFailureReply();
     addMessage({
       role: "assistant",
       content,
       retryContext,
+      retryReason: "timeout",
       retryText,
     });
     setStatus(content);
@@ -2117,7 +2107,6 @@ export function KaprukaGenieApp() {
       // If storage is unavailable, still show the welcome sheet for this load.
     }
 
-    let hideTimer: number | undefined;
     const showTimer = window.setTimeout(() => {
       setIsIntroPanelVisible(true);
 
@@ -2126,17 +2115,10 @@ export function KaprukaGenieApp() {
       } catch {
         // Ignore private browsing or storage quota errors.
       }
-
-      hideTimer = window.setTimeout(() => {
-        setIsIntroPanelVisible(false);
-      }, 5000);
     }, 3000);
 
     return () => {
       window.clearTimeout(showTimer);
-      if (hideTimer !== undefined) {
-        window.clearTimeout(hideTimer);
-      }
     };
   }, []);
 
@@ -2462,56 +2444,79 @@ export function KaprukaGenieApp() {
     const requestProfile = normalizeShoppingProfile(profileOverride);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 35000);
-    let response: Response;
+    const requestBody = JSON.stringify({
+      cartIds: buyBox.map((product) => product.id),
+      language,
+      mode,
+      profile: requestProfile,
+      preserveProfile,
+      query,
+      task: getTaskForMode(mode),
+      userMessage,
+    });
 
     try {
-      response = await fetch("/api/ai/commerce", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cartIds: buyBox.map((product) => product.id),
-          language,
-          mode,
-          profile: requestProfile,
-          preserveProfile,
-          query,
-          task: getTaskForMode(mode),
-          userMessage,
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error("The request timed out. Please try again.");
-      }
+      while (true) {
+        let response: Response;
 
-      throw error;
+        try {
+          response = await fetch("/api/ai/commerce", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: requestBody,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new Error("The request timed out. Please try again.");
+          }
+
+          throw error;
+        }
+
+        let data: (CommerceResponse & { error?: string }) | null = null;
+        try {
+          data = (await response.json()) as CommerceResponse & { error?: string };
+        } catch {
+          // Retry empty HTTP bodies until a valid response arrives or the
+          // existing request deadline turns this into a visible timeout.
+        }
+
+        const errorMessage = data?.error ?? "";
+        const isEmptyResponse =
+          !data ||
+          Object.keys(data).length === 0 ||
+          /empty(?:\s+\w+)*\s+response/i.test(errorMessage);
+
+        if (isEmptyResponse) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (!data) {
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(errorMessage || "Kapruka MCP commerce request failed.");
+        }
+
+        if (
+          applyPreferenceUpdates &&
+          !stripModelThinking(data.reply ?? "").trim()
+        ) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        applyCommerceResponse(data, applyPreferenceUpdates);
+        return data;
+      }
     } finally {
       window.clearTimeout(timeoutId);
     }
-    let data: CommerceResponse & { error?: string };
-
-    try {
-      data = (await response.json()) as CommerceResponse & { error?: string };
-    } catch {
-      throw new Error("The service returned an empty response. Please try again.");
-    }
-
-    if (!response.ok) {
-      throw new Error(data.error ?? "Kapruka MCP commerce request failed.");
-    }
-
-    if (
-      applyPreferenceUpdates &&
-      !stripModelThinking(data.reply ?? "").trim()
-    ) {
-      throw new Error("The service returned an empty response. Please try again.");
-    }
-
-    applyCommerceResponse(data, applyPreferenceUpdates);
-    return data;
   }
 
   function getContextDraftFromProfile(nextProfile: ShoppingProfile) {
@@ -2572,29 +2577,69 @@ export function KaprukaGenieApp() {
   }
 
   async function analyzeFirstMessage(content: string) {
-    const response = await fetch("/api/ai/context-analysis", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 35000);
+    const requestBody = JSON.stringify({
+      context: {
+        budget: profile.budget || null,
+        category: profile.category || null,
+        occasion: profile.occasion || null,
+        recipient: profile.recipient || null,
       },
-      body: JSON.stringify({
-        context: {
-          budget: profile.budget || null,
-          category: profile.category || null,
-          occasion: profile.occasion || null,
-          recipient: profile.recipient || null,
-        },
-        message: content,
-        selectedLanguage: language,
-      }),
+      message: content,
+      selectedLanguage: language,
     });
-    const data = (await response.json()) as ContextAnalysisResponse;
 
-    if (!response.ok) {
-      throw new Error(data.error ?? "Groq context analysis failed.");
+    try {
+      while (true) {
+        let response: Response;
+        try {
+          response = await fetch("/api/ai/context-analysis", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: requestBody,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new Error("The request timed out. Please try again.");
+          }
+
+          throw error;
+        }
+
+        let data: ContextAnalysisResponse | null = null;
+        try {
+          data = (await response.json()) as ContextAnalysisResponse;
+        } catch {
+          // Retry an empty body within the same overall request deadline.
+        }
+
+        const errorMessage = data?.error ?? "";
+        if (
+          !data ||
+          Object.keys(data).length === 0 ||
+          /empty(?:\s+\w+)*\s+(?:analysis|response)/i.test(errorMessage)
+        ) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (!data) {
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(errorMessage || "Groq context analysis failed.");
+        }
+
+        return data;
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-
-    return data;
   }
 
   function showContextPanel(
@@ -2688,6 +2733,10 @@ export function KaprukaGenieApp() {
         recipient: analysis.recipient ?? profile.recipient,
       };
     } catch (error) {
+      if (getRetryableFailureType(error)) {
+        throw error;
+      }
+
       setStatus(`${getErrorMessage(error)} Choose context manually.`);
     }
 
@@ -2886,7 +2935,12 @@ export function KaprukaGenieApp() {
     setMessages((current) =>
       current.map((item) =>
         item === message
-          ? { ...item, retryContext: undefined, retryText: undefined }
+          ? {
+              ...item,
+              retryContext: undefined,
+              retryReason: undefined,
+              retryText: undefined,
+            }
           : item,
       ),
     );
@@ -4300,7 +4354,8 @@ export function KaprukaGenieApp() {
                         ) : (
                           <>
                             {renderChatMessage(message.content)}
-                            {message.retryText ? (
+                            {message.retryReason === "timeout" &&
+                            message.retryText ? (
                               <button
                                 type="button"
                                 disabled={isSending}
@@ -4351,6 +4406,7 @@ export function KaprukaGenieApp() {
                 ))}
               </div>
 
+              {shouldShowProductSuggestions ? (
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 {recommendedProducts.length === 0 && isLoadingInitialProducts
                   ? [0, 1, 2].map((item) => (
@@ -4435,6 +4491,7 @@ export function KaprukaGenieApp() {
                   </article>
                 ))}
               </div>
+              ) : null}
                 </>
               )}
             </div>
