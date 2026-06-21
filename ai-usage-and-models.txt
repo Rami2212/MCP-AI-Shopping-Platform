@@ -1,0 +1,118 @@
+KAPRUKA GENIE - COMPLETE AI USAGE AND MODEL LIST
+Checked: 2026-06-21
+
+CURRENT MODEL CONFIGURATION
+
+No model overrides are currently set in src/.env.local, so the code defaults below are active.
+All direct AI services use Groq. No OpenRouter models or calls are used.
+
+1. FIRST-MESSAGE CONTEXT ANALYSIS
+   Purpose: Extract budget, recipient, occasion, gift type, requested custom gift type, and missing preference fields from the user's first message.
+   API route: /api/ai/context-analysis
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_CONTEXT_MODEL -> code default
+
+2. CURRENT SHOPPING MESSAGE ANALYSIS
+   Purpose: Classify the latest message as a question, command, or conversation; extract only current preferences; create the product search query; translate a specific requested gift type into English search terms when needed.
+   API route: /api/ai/commerce
+   Function: getGroqMessageAnalysis
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+
+3. MAIN SHOPPING RESPONSE
+   Purpose: Generate the direct chat reply in the selected language.
+   Also generates: product ranking, fit scores, recommendation reasons, reply chips, event-plan or gift-box checklist items, optional gift-message output, and commerce analytics such as buy-box health, conversion signal, next action, and risk.
+   API route: /api/ai/commerce
+   Function: getGroqCommerce
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+   Note: A normal ready-state shopping message usually makes two AI calls: message analysis first, then this main response call.
+
+4. PRODUCT COMPARISON RESPONSE
+   Purpose: Write the final comparison paragraph using the live products returned by Kapruka MCP.
+   API route: /api/ai/commerce
+   Function: getGroqCompareSuggestion
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+   Note: When two or more product IDs are supplied, the separate message-analysis AI call is skipped.
+
+5. ORDER-TRACKING SUGGESTION
+   Purpose: Produce one short next-step suggestion after Kapruka MCP returns the real tracking result. It does not create or change tracking facts.
+   API route: /api/ai/commerce
+   Function: getGroqTrackingSuggestion
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+
+6. GIFT-CARD MESSAGE GENERATION
+   Purpose: Generate the gift message using the selected language, size, tone, preferences, and user suggestions.
+   API route: /api/ai/commerce
+   Function: getGroqGiftMessage
+   Primary model: llama-3.3-70b-versatile
+   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+
+7. IMAGE ANALYSIS
+   Purpose: Analyze an uploaded image and return a summary, visual labels, confidence scores, visible text, product hints, and a catalog search query.
+   API route: /api/ai/image-analysis
+   Primary model: meta-llama/llama-4-scout-17b-16e-instruct
+   Configuration: GROQ_VISION_MODEL -> code default
+   Important: This route currently calls Groq directly and does not use the automatic text-model fallback helper. GROQ_VISION_BACKUP_MODEL appears in the example configuration but is not currently used by this route.
+   Chained usage: After image analysis, the generated search query is passed through the normal commerce flow, which can add the message-analysis and main-response AI calls.
+
+8. VOICE RECOGNITION AND TRANSCRIPTION
+   Purpose: Convert the recorded voice message to text.
+   API route: /api/ai/voice-messages
+   Model: whisper-large-v3-turbo
+   Supported input in the current route: English only
+   Fallback model: None
+   Chained usage: The transcript is submitted like a typed message. It can therefore trigger first-message context analysis or the normal two-call commerce flow afterward.
+
+9. STANDALONE CHATBOT ENDPOINT
+   Purpose: Generate a short multilingual shopping-assistant reply from chat history.
+   API route: /api/ai/chatbot
+   Primary model: qwen/qwen3-32b
+   Configuration: GROQ_REPLY_MODEL -> code default
+   Important: This endpoint exists, but the current KaprukaGenieApp interface does not call it. The interface uses the commerce route for its replies.
+
+AUTOMATIC TEXT-MODEL FALLBACKS
+
+The context-analysis, commerce, comparison, tracking-suggestion, gift-message, and standalone-chatbot calls use the shared automatic retry helper.
+
+For llama-3.3-70b-versatile primary calls:
+1. llama-3.3-70b-versatile
+2. llama-3.1-8b-instant
+3. qwen/qwen3-32b
+4. openai/gpt-oss-20b
+
+For the qwen/qwen3-32b standalone chatbot call:
+1. qwen/qwen3-32b
+2. llama-3.1-8b-instant
+3. openai/gpt-oss-20b
+
+Fallback occurs for Groq HTTP 429, 502, 503, 504, network failure, or per-model timeout. Duplicate model names are removed. A maximum of four distinct models can be attempted within the total timeout.
+
+FEATURES THAT DO NOT USE AI
+
+- Kapruka product search: Kapruka MCP API
+- Product data, prices, availability, images, categories, and URLs: Kapruka MCP API
+- Product popup and Add to Cart: Local interface state
+- Cart totals: Local calculation
+- Delivery checking: Kapruka MCP API
+- Checkout-link creation: Kapruka MCP API
+- Raw order tracking lookup: Kapruka MCP API
+- Initial starter-product loading: Kapruka MCP API
+- Read aloud: Browser Web Speech speech-synthesis engine; no Groq call
+- Rotating waiting messages: Static local text; no AI call
+- Preference normalization and some budget, recipient, occasion, and intent fallback detection: Local code
+- Reply cleanup, product-name removal, chip filtering, and three-word chip limiting: Local code
+- Chat-history storage: Browser IndexedDB or localStorage
+
+SUMMARY OF POSSIBLE AI CALL COUNTS
+
+- First typed message: usually 1 context-analysis call; after preferences are submitted, usually 2 commerce calls.
+- Later shopping message: usually 2 calls (message analysis + main response).
+- Product comparison with valid IDs: usually 1 comparison call.
+- Tracking: 1 tracking-suggestion call after the non-AI MCP lookup.
+- Gift-message generation: 1 call.
+- Image upload: 1 vision call, followed by up to 2 normal commerce calls.
+- Voice message: 1 transcription call, followed by the same calls as the resulting typed message.
+- Initial product load and checkout creation: 0 AI calls.

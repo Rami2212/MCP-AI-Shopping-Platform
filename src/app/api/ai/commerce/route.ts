@@ -201,6 +201,53 @@ const giftTypeSearchTerms: Record<string, string> = {
   perfumes: "perfume",
 };
 
+const categorySearchTerms: Record<string, string[]> = {
+  cakes: ["cake", "cakes", "cupcake"],
+  chocolate: ["chocolate", "chocolates", "truffles"],
+  electronics: ["electronics", "headphones", "earbuds"],
+  fashion: ["fashion", "watch", "wallet", "handbag"],
+  flowers: ["flowers", "roses", "bouquet"],
+  perfumes: ["perfume", "fragrance", "cologne"],
+};
+
+const categoryRelevanceTerms: Record<string, string[]> = {
+  cakes: ["cake", "cakes", "cupcake", "cupcakes", "bakery", "gateau"],
+  chocolate: ["chocolate", "chocolates", "cocoa", "truffle", "truffles"],
+  electronics: [
+    "electronic",
+    "electronics",
+    "headphone",
+    "headphones",
+    "earphone",
+    "earphones",
+    "earbud",
+    "earbuds",
+    "speaker",
+    "speakers",
+    "charger",
+    "power bank",
+    "smartwatch",
+  ],
+  fashion: [
+    "fashion",
+    "watch",
+    "watches",
+    "wallet",
+    "wallets",
+    "handbag",
+    "handbags",
+    "shirt",
+    "dress",
+    "clothing",
+    "jewelry",
+    "jewellery",
+    "accessory",
+    "accessories",
+  ],
+  flowers: ["flower", "flowers", "rose", "roses", "bouquet", "floral"],
+  perfumes: ["perfume", "perfumes", "fragrance", "fragrances", "cologne", "scent"],
+};
+
 function parseStringArray(value: unknown, maxItems: number) {
   if (!Array.isArray(value)) {
     return [];
@@ -454,31 +501,6 @@ function getDeterministicCompareSummary(products: Product[]) {
   return `${categorySentence} ${priceSentence} ${stockSentence} Choose ${preferred.name} if you want the safer pick because it has ${preferred.id === first.id ? "the better price or availability balance" : "the better availability or value balance"} for this comparison. Choose ${alternative.name} instead if its ${alternative.category} category and description match the recipient better, but do not choose it over ${preferred.name} unless that fit matters more than ${preferred.id === first.id ? second.name : first.name}'s price or stock advantage.`;
 }
 
-function getNearbyBudgetFilter(filter: BudgetFilter): BudgetFilter {
-  if (
-    typeof filter.min_price === "number" &&
-    typeof filter.max_price === "number"
-  ) {
-    const span = Math.max(1, filter.max_price - filter.min_price);
-    const margin = Math.max(1000, Math.round(span * 0.75));
-
-    return {
-      max_price: filter.max_price + margin,
-      min_price: Math.max(1, filter.min_price - margin),
-    };
-  }
-
-  if (typeof filter.max_price === "number") {
-    return { max_price: Math.round(filter.max_price * 1.25) };
-  }
-
-  if (typeof filter.min_price === "number") {
-    return { min_price: Math.max(1, Math.round(filter.min_price * 0.75)) };
-  }
-
-  return {};
-}
-
 function isProductInsideBudget(product: Product, filter: BudgetFilter) {
   if (product.currency.toUpperCase() !== "LKR") {
     return false;
@@ -499,6 +521,75 @@ function isProductInsideBudget(product: Product, filter: BudgetFilter) {
   }
 
   return true;
+}
+
+function getPreferenceSearchTerms(query: string, profile: ShoppingProfile) {
+  const category = profile.category?.trim().toLowerCase() ?? "";
+  const expandedTerms = categorySearchTerms[category];
+
+  if (expandedTerms) {
+    return [...new Set([query, ...expandedTerms].filter(Boolean))];
+  }
+
+  return [query];
+}
+
+function getPreferenceRelevanceTerms(
+  query: string,
+  profile: ShoppingProfile,
+) {
+  const category = profile.category?.trim().toLowerCase() ?? "";
+
+  if (!category) {
+    return [];
+  }
+
+  const knownCategoryTerms = categoryRelevanceTerms[category];
+  if (knownCategoryTerms) {
+    return knownCategoryTerms;
+  }
+
+  if (category !== "other") {
+    return [category];
+  }
+
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(
+      (term) =>
+        term.length >= 3 &&
+        !/^(gift|gifts|present|presents|personalized|custom|birthday|anniversary|wedding|male|female|child|couple)$/.test(
+          term,
+        ),
+    );
+}
+
+function isProductRelevantToPreferences(
+  product: KaprukaSearchProduct,
+  query: string,
+  profile: ShoppingProfile,
+) {
+  const relevanceTerms = getPreferenceRelevanceTerms(query, profile);
+
+  if (relevanceTerms.length === 0) {
+    return true;
+  }
+
+  const normalized = toProduct(product);
+  if (!normalized) {
+    return false;
+  }
+
+  const productText = [
+    normalized.name,
+    normalized.category,
+    normalized.description,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return relevanceTerms.some((term) => productText.includes(term));
 }
 
 function getSearchQuery(query: string, profile: ShoppingProfile, mode: string) {
@@ -1023,7 +1114,9 @@ async function searchKaprukaProducts(
 ): Promise<ProductSearchResult> {
   const budgetFilter = parseBudgetFilter(rawQuery, profile.budget);
   const searchTerms =
-    query === COMMON_GIFT_SEARCH_QUERY ? COMMON_GIFT_SEARCH_TERMS : [query];
+    query === COMMON_GIFT_SEARCH_QUERY
+      ? COMMON_GIFT_SEARCH_TERMS
+      : getPreferenceSearchTerms(query, profile);
   const baseParams = {
     currency: "LKR",
     in_stock_only: true,
@@ -1059,7 +1152,11 @@ async function searchKaprukaProducts(
 
         seenIds.add(id);
         return true;
-      });
+      })
+      .filter((product) =>
+        isProductRelevantToPreferences(product, query, profile),
+      )
+      .slice(0, 8);
   }
 
   if (!hasBudgetFilter(budgetFilter)) {
@@ -1089,22 +1186,12 @@ async function searchKaprukaProducts(
     };
   }
 
-  const nearbyBudgetFilter = getNearbyBudgetFilter(budgetFilter);
-  const withNearbyBudget = await searchWithParams(nearbyBudgetFilter);
-  const nearbyResults = withNearbyBudget.filter((product) => {
-    const normalized = toProduct(product);
-    return normalized
-      ? isProductInsideBudget(normalized, nearbyBudgetFilter)
-      : false;
-  });
-
   return {
     budgetFilter,
     exactBudgetMatched: false,
-    nearbyBudgetLabel: formatBudgetFilter(nearbyBudgetFilter),
     requestedBudgetLabel: formatBudgetFilter(budgetFilter),
-    results: nearbyResults,
-    usedNearbyBudgetFallback: true,
+    results: [],
+    usedNearbyBudgetFallback: false,
   };
 }
 
@@ -1249,7 +1336,7 @@ async function getGroqCommerce(
         {
           role: "system",
           content:
-            "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage: Sinhala uses Sinhala script and Singlish uses Latin script. Generate chips only from the current user message; never add generic delivery, checkout, order-link, or more-like-this chips. Every chip must contain at most three words. Return JSON only.",
+            "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage: Sinhala uses Sinhala script and Singlish uses Latin script. Generate chips only from the current user message; never add generic delivery, checkout, order-link, or more-like-this chips. Every chip must contain at most three words. Return JSON only.",
         },
         {
           role: "user",

@@ -18,6 +18,8 @@ import { formatPrice, Product } from "@/lib/productCatalog";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  retryContext?: boolean;
+  retryText?: string;
   variant?: "context-panel";
 };
 
@@ -1141,6 +1143,7 @@ const rotatingActivityMessages: Record<Language, string[]> = {
 };
 
 export function KaprukaGenieApp() {
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -1406,6 +1409,70 @@ export function KaprukaGenieApp() {
     if (responseLanguage === "Sinhala") return "ඔබේ ඉල්ලීමට ගැළපෙන options කිහිපයක් හමු වුණා.";
     if (responseLanguage === "Singlish") return "Oyage illimata galapena options tikak hambuna.";
     return "I found a few options related to your request.";
+  }
+
+  function getRetryableFailureType(error: unknown) {
+    const message = getErrorMessage(error).toLowerCase();
+
+    if (
+      /timed?\s*out|timeout|temporarily unavailable|automatic model retries/.test(
+        message,
+      )
+    ) {
+      return "timeout" as const;
+    }
+
+    if (/empty response|empty .*response|unexpected end of json/.test(message)) {
+      return "empty" as const;
+    }
+
+    return null;
+  }
+
+  function getRetryFailureReply(type: "timeout" | "empty") {
+    if (language === "Sinhala") {
+      return type === "timeout"
+        ? "ඉල්ලීමට නියමිත වේලාව තුළ පිළිතුරක් ලැබුණේ නැහැ. නැවත උත්සාහ කරන්න."
+        : "හිස් පිළිතුරක් ලැබුණා. නැවත උත්සාහ කරන්න.";
+    }
+
+    if (language === "Singlish") {
+      return type === "timeout"
+        ? "Request eka time out una. Ayeth try karanna."
+        : "Empty response ekak labuna. Ayeth try karanna.";
+    }
+
+    return type === "timeout"
+      ? "The request timed out. Please try again."
+      : "I received an empty response. Please try again.";
+  }
+
+  function addRetryFailure(
+    error: unknown,
+    retryText: string,
+    retryContext = false,
+  ) {
+    const failureType = getRetryableFailureType(error);
+
+    if (!failureType) {
+      return false;
+    }
+
+    const content = getRetryFailureReply(failureType);
+    addMessage({
+      role: "assistant",
+      content,
+      retryContext,
+      retryText,
+    });
+    setStatus(content);
+    return true;
+  }
+
+  function getTryAgainLabel() {
+    if (language === "Sinhala") return "නැවත උත්සාහ කරන්න";
+    if (language === "Singlish") return "Ayeth try karanna";
+    return "Try again";
   }
 
   function getParticipantCount(draft: ContextDraft) {
@@ -2022,6 +2089,24 @@ export function KaprukaGenieApp() {
   }, [isSending, language]);
 
   useEffect(() => {
+    if (isFormToolMode) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const container = chatScrollContainerRef.current;
+      if (container) {
+        container.scrollTo({
+          behavior: "smooth",
+          top: container.scrollHeight,
+        });
+      }
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activityMessage, chips, isFormToolMode, messages, recommendedProducts]);
+
+  useEffect(() => {
     const today = getLocalDateString();
 
     try {
@@ -2309,7 +2394,7 @@ export function KaprukaGenieApp() {
     data: CommerceResponse,
     applyPreferenceUpdates = false,
   ) {
-    if (data.products && data.products.length > 0) {
+    if (data.products) {
       setRecommendedProducts(data.products);
     }
 
@@ -2406,10 +2491,23 @@ export function KaprukaGenieApp() {
     } finally {
       window.clearTimeout(timeoutId);
     }
-    const data = (await response.json()) as CommerceResponse & { error?: string };
+    let data: CommerceResponse & { error?: string };
+
+    try {
+      data = (await response.json()) as CommerceResponse & { error?: string };
+    } catch {
+      throw new Error("The service returned an empty response. Please try again.");
+    }
 
     if (!response.ok) {
       throw new Error(data.error ?? "Kapruka MCP commerce request failed.");
+    }
+
+    if (
+      applyPreferenceUpdates &&
+      !stripModelThinking(data.reply ?? "").trim()
+    ) {
+      throw new Error("The service returned an empty response. Please try again.");
     }
 
     applyCommerceResponse(data, applyPreferenceUpdates);
@@ -2643,7 +2741,15 @@ export function KaprukaGenieApp() {
         nextProfile,
       );
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      if (
+        !addRetryFailure(
+          error,
+          pendingUserRequest || contextMessage,
+          true,
+        )
+      ) {
+        setStatus(getErrorMessage(error));
+      }
     } finally {
       setActivityMessage("");
       setIsSending(false);
@@ -2771,6 +2877,39 @@ export function KaprukaGenieApp() {
     void submitText(getLocalizedUserText(chip));
   }
 
+  async function handleRetryMessage(message: ChatMessage) {
+    const retryText = message.retryText?.trim();
+    if (!retryText || isSending) {
+      return;
+    }
+
+    setMessages((current) =>
+      current.map((item) =>
+        item === message
+          ? { ...item, retryContext: undefined, retryText: undefined }
+          : item,
+      ),
+    );
+
+    if (!message.retryContext) {
+      await submitText(retryText);
+      return;
+    }
+
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    try {
+      await answerWithCollectedContext(retryText, profile);
+    } catch (error) {
+      if (!addRetryFailure(error, retryText, true)) {
+        setStatus(getErrorMessage(error));
+      }
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
   async function submitText(nextText: string) {
     const content = nextText.trim();
     if (!content || isSending) {
@@ -2805,7 +2944,9 @@ export function KaprukaGenieApp() {
         await handleReadyMessage(content);
       }
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      if (!addRetryFailure(error, content)) {
+        setStatus(getErrorMessage(error));
+      }
     } finally {
       setActivityMessage("");
       setIsSending(false);
@@ -4115,7 +4256,10 @@ export function KaprukaGenieApp() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 sm:p-6">
+            <div
+              ref={chatScrollContainerRef}
+              className="flex-1 overflow-auto p-4 sm:p-6"
+            >
               {isCompareMode ? (
                 renderCompareTool()
               ) : isTrackingMode ? (
@@ -4151,9 +4295,23 @@ export function KaprukaGenieApp() {
                               }`
                         }`}
                       >
-                        {isContextPanel
-                          ? renderContextPanel(isActiveContextPanel)
-                          : renderChatMessage(message.content)}
+                        {isContextPanel ? (
+                          renderContextPanel(isActiveContextPanel)
+                        ) : (
+                          <>
+                            {renderChatMessage(message.content)}
+                            {message.retryText ? (
+                              <button
+                                type="button"
+                                disabled={isSending}
+                                onClick={() => void handleRetryMessage(message)}
+                                className="mt-3 block rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {getTryAgainLabel()}
+                              </button>
+                            ) : null}
+                          </>
+                        )}
                       </div>
                       {isLatestAssistantMessage && language === "English" ? (
                         <button
