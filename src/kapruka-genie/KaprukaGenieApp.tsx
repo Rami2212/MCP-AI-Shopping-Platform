@@ -2443,7 +2443,7 @@ export function KaprukaGenieApp() {
   ) {
     const requestProfile = normalizeShoppingProfile(profileOverride);
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 35000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 28000);
     const requestBody = JSON.stringify({
       cartIds: buyBox.map((product) => product.id),
       language,
@@ -2578,7 +2578,7 @@ export function KaprukaGenieApp() {
 
   async function analyzeFirstMessage(content: string) {
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), 35000);
+    const timeoutId = window.setTimeout(() => controller.abort(), 28000);
     const requestBody = JSON.stringify({
       context: {
         budget: profile.budget || null,

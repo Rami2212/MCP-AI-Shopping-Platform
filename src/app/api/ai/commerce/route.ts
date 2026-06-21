@@ -9,8 +9,11 @@ import {
   fetchGroqChatWithFallback,
   getGroqApiKey,
   getMissingGroqKeyMessage,
-  readGroqError,
 } from "@/lib/groqHosted";
+import {
+  getHuggingFaceApiKey,
+  getHuggingFaceNovitaQwenReply,
+} from "@/lib/huggingFaceNovita";
 import { createKaprukaMcpClient } from "@/lib/kaprukaMcp";
 import { toKaprukaLocationType } from "@/lib/deliveryLocations";
 import { KaprukaSearchProduct, Product, toProduct } from "@/lib/productCatalog";
@@ -139,6 +142,18 @@ type ProductSearchResult = {
   usedNearbyBudgetFallback: boolean;
 };
 
+type CacheEntry<T> = {
+  expiresAt: number;
+  value: Promise<T>;
+};
+
+const PRODUCT_SEARCH_CACHE_TTL_MS = 45_000;
+const CITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_PRODUCT_SEARCH_CACHE_ENTRIES = 100;
+const MAX_CITY_CACHE_ENTRIES = 100;
+const productSearchCache = new Map<string, CacheEntry<ProductSearchResult>>();
+const cityCache = new Map<string, CacheEntry<string>>();
+
 type CommerceResponse = {
   analytics: {
     buyBoxHealth: string;
@@ -187,6 +202,125 @@ const fallbackResponse: CommerceResponse = {
   reply: "I checked the live Kapruka MCP catalog.",
   tracking: "",
 };
+
+function getCachedValue<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  ttlMs: number,
+  maxEntries: number,
+  load: () => Promise<T>,
+) {
+  const existing = cache.get(key);
+  if (existing && existing.expiresAt > Date.now()) {
+    return existing.value;
+  }
+
+  if (existing) {
+    cache.delete(key);
+  }
+
+  while (cache.size >= maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+
+  const value = load().catch((error) => {
+    cache.delete(key);
+    throw error;
+  });
+  cache.set(key, {
+    expiresAt: Date.now() + ttlMs,
+    value,
+  });
+
+  return value;
+}
+
+function isDeliveryRequested(message: string) {
+  return /\b(deliver(?:y|ed|ing)?|shipping|ship|arriv(?:e|al)|same[-\s]?day|delivery\s+fee)\b|බෙදාහැර|ඩිලිවරි|ගෙනැවිත්|delivery|deliver/iu.test(
+    message,
+  );
+}
+
+function getLocalChips(
+  language: DetectedLanguage,
+  task: string,
+  deliveryRequested: boolean,
+) {
+  if (task === "eventPlan" || task === "giftBox") {
+    return [];
+  }
+
+  if (deliveryRequested) {
+    if (language === "Sinhala") {
+      return ["නගරය වෙනස් කරන්න", "දිනය වෙනස් කරන්න"];
+    }
+
+    if (language === "Singlish") {
+      return ["City eka wenas", "Date eka wenas"];
+    }
+
+    return ["Change city", "Change date"];
+  }
+
+  if (language === "Sinhala") {
+    return ["අයවැය වෙනස් කරන්න", "තෑග්ග වෙනස් කරන්න"];
+  }
+
+  if (language === "Singlish") {
+    return ["Budget eka wenas", "Gift type wenas"];
+  }
+
+  return ["Change budget", "Change gift type"];
+}
+
+function getLocalAnalytics({
+  delivery,
+  deliveryRequested,
+  intent,
+  products,
+  profile,
+  recommendations,
+}: {
+  delivery: KaprukaDeliveryResponse | null;
+  deliveryRequested: boolean;
+  intent: MessageIntent;
+  products: Product[];
+  profile: ShoppingProfile;
+  recommendations: CommerceRecommendation[];
+}): CommerceResponse["analytics"] {
+  const hasProducts = products.length > 0;
+  const hasRankedProducts = recommendations.length > 0;
+
+  return {
+    buyBoxHealth: hasProducts
+      ? hasRankedProducts
+        ? "Ranked live products ready"
+        : "Live products ready"
+      : "No exact live product match",
+    conversionSignal:
+      intent === "command"
+        ? "Active shopping request"
+        : intent === "question"
+          ? "Product research question"
+          : "Shopping conversation",
+    nextBestAction: deliveryRequested
+      ? !profile.city
+        ? "Add a delivery city"
+        : delivery
+          ? "Review delivery availability"
+          : "Retry the delivery check"
+      : hasProducts
+        ? "Review the recommended cards"
+        : "Change a search preference",
+    risk: !hasProducts
+      ? "Live catalog returned no exact match"
+      : deliveryRequested && delivery?.available === false
+        ? "Requested delivery is unavailable"
+        : "Price and stock can change",
+  };
+}
 
 const giftTypeSearchTerms: Record<string, string> = {
   cake: "cake",
@@ -1112,6 +1246,30 @@ async function searchKaprukaProducts(
   profile: ShoppingProfile,
   rawQuery = query,
 ): Promise<ProductSearchResult> {
+  const cacheKey = JSON.stringify({
+    budget: profile.budget,
+    category: profile.category,
+    occasion: profile.occasion,
+    query,
+    rawQuery,
+    recipient: profile.recipient,
+  });
+
+  return getCachedValue(
+    productSearchCache,
+    cacheKey,
+    PRODUCT_SEARCH_CACHE_TTL_MS,
+    MAX_PRODUCT_SEARCH_CACHE_ENTRIES,
+    () => searchKaprukaProductsUncached(mcp, query, profile, rawQuery),
+  );
+}
+
+async function searchKaprukaProductsUncached(
+  mcp: Awaited<ReturnType<typeof createKaprukaMcpClient>>,
+  query: string,
+  profile: ShoppingProfile,
+  rawQuery = query,
+): Promise<ProductSearchResult> {
   const budgetFilter = parseBudgetFilter(rawQuery, profile.budget);
   const searchTerms =
     query === COMMON_GIFT_SEARCH_QUERY
@@ -1126,7 +1284,7 @@ async function searchKaprukaProducts(
   };
 
   async function searchWithParams(filter: BudgetFilter = {}) {
-    const responses = await Promise.all(
+    const responseResults = await Promise.allSettled(
       searchTerms.map((term) =>
         mcp.callTool<KaprukaSearchResponse>("kapruka_search_products", {
           ...baseParams,
@@ -1135,6 +1293,20 @@ async function searchKaprukaProducts(
         }),
       ),
     );
+    const responses = responseResults
+      .filter(
+        (result): result is PromiseFulfilledResult<KaprukaSearchResponse> =>
+          result.status === "fulfilled",
+      )
+      .map((result) => result.value);
+
+    if (responses.length === 0) {
+      const firstFailure = responseResults.find(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      );
+      throw firstFailure?.reason ?? new Error("Kapruka product search failed.");
+    }
     const seenIds = new Set<string>();
 
     const rawResults =
@@ -1199,28 +1371,39 @@ async function getCanonicalCity(
   mcp: Awaited<ReturnType<typeof createKaprukaMcpClient>>,
   city: string,
 ) {
-  const cityResponse = await mcp.callTool<KaprukaCityResponse>(
-    "kapruka_list_delivery_cities",
-    {
-      limit: 1,
-      query: city,
-      response_format: "json",
+  const cacheKey = city.trim().toLowerCase();
+
+  return getCachedValue(
+    cityCache,
+    cacheKey,
+    CITY_CACHE_TTL_MS,
+    MAX_CITY_CACHE_ENTRIES,
+    async () => {
+      const cityResponse = await mcp.callTool<KaprukaCityResponse>(
+        "kapruka_list_delivery_cities",
+        {
+          limit: 1,
+          query: city,
+          response_format: "json",
+        },
+      );
+
+      return cityResponse.cities?.[0]?.name ?? city;
     },
   );
-
-  return cityResponse.cities?.[0]?.name ?? city;
 }
 
 async function checkDelivery(
   mcp: Awaited<ReturnType<typeof createKaprukaMcpClient>>,
   profile: ShoppingProfile,
   productId?: string,
+  canonicalCity?: string,
 ) {
   if (!profile.city) {
     return null;
   }
 
-  const city = await getCanonicalCity(mcp, profile.city);
+  const city = canonicalCity ?? (await getCanonicalCity(mcp, profile.city));
 
   return mcp.callTool<KaprukaDeliveryResponse>("kapruka_check_delivery", {
     city,
@@ -1327,29 +1510,55 @@ async function getGroqCommerce(
   searchQuery: string,
   productSearch: ProductSearchResult | null,
 ) {
-  const { response } = await fetchGroqChatWithFallback(apiKey, {
+  const huggingFaceApiKey = getHuggingFaceApiKey();
+  const directReplyPromise = huggingFaceApiKey
+    ? getHuggingFaceNovitaQwenReply(huggingFaceApiKey, {
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are the direct conversation voice for Kapruka Genie. Answer the user's actual message naturally and concisely. Answer questions directly, acknowledge or carry out commands, and respond naturally to conversation. Product cards update separately, so never say that you updated products. Never include product names, product IDs, prices, product categories, product examples, recommendation lists, bullets, or numbered lists. If exact matching products were not found, say so briefly and ask whether the user wants to change a preference; do not invent or suggest a substitute category. The selected replyLanguage is authoritative. For English, reply in English. For Sinhala, use Sinhala script. For Singlish, write natural conversational Sinhala entirely with Latin letters, not English or Sinhala script; use a simple tone like 'Hari, oyage request ekata galapena options hoyala denna puluwan.' English product terms may appear only when necessary. Do not reveal reasoning or include <think> blocks. Return one short paragraph only.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify({
+              delivery,
+              exactCatalogMatchCount: products.length,
+              messageIntent: messageAnalysis.intent,
+              mode,
+              profile,
+              query,
+              replyLanguage: language,
+              searchContext: {
+                budgetResult: productSearch
+                  ? getBudgetSearchReply(productSearch, products.length)
+                  : null,
+                catalogSearchQuery: searchQuery,
+              },
+              task,
+            }),
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 120,
+      })
+    : Promise.resolve(null);
+  const groqCommercePromise = fetchGroqChatWithFallback(apiKey, {
     model:
       process.env.GROQ_PROCESSING_MODEL ??
       process.env.GROQ_COMMERCE_MODEL ??
       DEFAULT_MODEL,
     messages: [
-        {
-          role: "system",
-          content:
-            "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. Understand Singlish as natural Sinhala meaning written informally with Latin letters, including spelling variations. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage. For Sinhala, use Sinhala script. For Singlish, write natural conversational Sinhala entirely with Latin letters; do not answer in English and do not use Sinhala script. English product terms may appear only when necessary. Generate chips only from the current user message; never add generic delivery, checkout, order-link, or more-like-this chips. Every chip must contain at most three words. Return JSON only.",
+          {
+            role: "system",
+            content:
+              "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. Understand Singlish as natural Sinhala meaning written informally with Latin letters, including spelling variations. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage. For Sinhala, use Sinhala script. For Singlish, write natural conversational Sinhala entirely with Latin letters; do not answer in English and do not use Sinhala script. English product terms may appear only when necessary. Analytics and reply chips are generated locally, so do not return them. Return JSON only.",
         },
         {
           role: "user",
           content: JSON.stringify({
             delivery,
             expectedSchema: {
-              analytics: {
-                buyBoxHealth: "short status",
-                conversionSignal: "short signal",
-                nextBestAction: "short action",
-                risk: "short risk",
-              },
-              chips: ["selection up to 3 words"],
               eventPlan: ["optional checklist line"],
               giftMessage: "optional generated message",
               mode: "active mode",
@@ -1382,33 +1591,51 @@ async function getGroqCommerce(
         },
     ],
     temperature: 0.2,
-    max_completion_tokens: 1200,
+    max_completion_tokens: 850,
     response_format: {
       type: "json_object",
     },
   });
+  const { response } = await groqCommercePromise;
+  const directReply = await Promise.race([
+    directReplyPromise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
+  ]);
 
   if (!response.ok) {
-    return NextResponse.json(
-      { error: await readGroqError(response) },
-      { status: response.status },
-    );
+    return {
+      ...fallbackResponse,
+      mode,
+      recommendations: fallbackRecommendations(products),
+      reply: sanitizeChatReply(
+        directReply || getNoProductListFallback(language),
+        products,
+        language,
+      ),
+    };
   }
 
   const content = getAssistantContent((await response.json()) as unknown);
 
   if (!content) {
-    return NextResponse.json(
-      { error: "Groq returned an empty commerce response." },
-      { status: 502 },
-    );
+    return {
+      ...fallbackResponse,
+      mode,
+      recommendations: fallbackRecommendations(products),
+      reply: sanitizeChatReply(
+        directReply || getNoProductListFallback(language),
+        products,
+        language,
+      ),
+    };
   }
 
   const commerce = parseCommerceResponse(content, mode, products);
+  const reply = directReply || commerce.reply;
 
   return {
     ...commerce,
-    reply: sanitizeChatReply(commerce.reply, products, language),
+    reply: sanitizeChatReply(reply, products, language),
   };
 }
 
@@ -1601,9 +1828,10 @@ export async function POST(request: Request) {
       });
     }
 
-    const mcp = await createKaprukaMcpClient();
+    const mcpPromise = createKaprukaMcpClient();
 
     if (task === "checkout") {
+      const mcp = await mcpPromise;
       const missingFields = getMissingCheckoutFields(cartIds, profile, checkout);
 
       if (missingFields.length > 0) {
@@ -1636,6 +1864,7 @@ export async function POST(request: Request) {
     }
 
     if (task === "track") {
+      const mcp = await mcpPromise;
       const orderNumber = getOrderNumber(query);
 
       if (!orderNumber) {
@@ -1681,9 +1910,9 @@ export async function POST(request: Request) {
     const productIdsForCompare =
       task === "compare" ? requestedProductIds : [];
     const apiKey = getGroqApiKey();
-    const messageAnalysis =
+    const messageAnalysisPromise =
       apiKey && task !== "initial" && productIdsForCompare.length < 2
-        ? await withTimeout(
+        ? withTimeout(
             getGroqMessageAnalysis(
               apiKey,
               language,
@@ -1691,9 +1920,13 @@ export async function POST(request: Request) {
               query,
               userMessage,
             ),
-            6000,
+            4000,
           ).catch(() => null)
-        : null;
+        : Promise.resolve(null);
+    const [mcp, messageAnalysis] = await Promise.all([
+      mcpPromise,
+      messageAnalysisPromise,
+    ]);
     const locallyDetectedBudget = inferBudgetPreference(userMessage);
     const locallyDetectedOccasion = inferOccasionPreference(userMessage);
     const locallyDetectedRecipient = inferRecipientPreference(userMessage);
@@ -1738,16 +1971,31 @@ export async function POST(request: Request) {
               effectiveProfile,
             )
           : getSearchQuery(query, effectiveProfile, mode);
-    let productSearch: ProductSearchResult | null = null;
-    const searchResults =
+    const deliveryRequested = isDeliveryRequested(userMessage);
+    const canonicalCityPromise =
+      deliveryRequested && effectiveProfile.city
+        ? getCanonicalCity(mcp, effectiveProfile.city).catch(() => null)
+        : Promise.resolve(null);
+    const productSearchPromise =
       productIdsForCompare.length >= 2
-        ? await searchProductsByIds(mcp, productIdsForCompare)
-        : (productSearch = await searchKaprukaProducts(
+        ? searchProductsByIds(mcp, productIdsForCompare).then((results) => ({
+            productSearch: null,
+            results,
+          }))
+        : searchKaprukaProducts(
             mcp,
             searchQuery,
             effectiveProfile,
             query,
-          )).results;
+          ).then((productSearch) => ({
+            productSearch,
+            results: productSearch.results,
+          }));
+    const [searchOutcome, canonicalCity] = await Promise.all([
+      productSearchPromise,
+      canonicalCityPromise,
+    ]);
+    const { productSearch, results: searchResults } = searchOutcome;
     const products = searchResults
       .map((product) => toProduct(product))
       .filter((product): product is Product => product !== null);
@@ -1827,11 +2075,15 @@ export async function POST(request: Request) {
     }
 
     const productIdForDelivery = products[0]?.id ?? cartIds[0];
-    const delivery = await checkDelivery(
-      mcp,
-      effectiveProfile,
-      productIdForDelivery,
-    );
+    const delivery =
+      deliveryRequested && effectiveProfile.city && canonicalCity
+        ? await checkDelivery(
+            mcp,
+            effectiveProfile,
+            productIdForDelivery,
+            canonicalCity,
+          ).catch(() => null)
+        : null;
 
     if (products.length === 0 && !apiKey) {
       return NextResponse.json({
@@ -1890,13 +2142,28 @@ export async function POST(request: Request) {
       task === "compare" ? products.slice(0, 3) : recommendationProducts;
     return NextResponse.json({
       ...commerce,
-      chips: commerce.chips,
+      analytics: getLocalAnalytics({
+        delivery,
+        deliveryRequested,
+        intent: resolvedMessageAnalysis.intent,
+        products: responseProducts,
+        profile: effectiveProfile,
+        recommendations,
+      }),
+      chips: getLocalChips(
+        resolvedMessageAnalysis.detectedLanguage,
+        task,
+        deliveryRequested,
+      ),
       delivery,
       detectedLanguage: resolvedMessageAnalysis.detectedLanguage,
       mcp: {
         endpoint: "https://mcp.kapruka.com/mcp",
         searchQuery,
-        tools: ["kapruka_search_products", "kapruka_check_delivery"],
+        tools: [
+          "kapruka_search_products",
+          ...(deliveryRequested ? ["kapruka_check_delivery"] : []),
+        ],
       },
       products: responseProducts,
       preferences: getClientPreferences(effectiveProfile),

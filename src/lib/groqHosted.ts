@@ -11,8 +11,8 @@ const DEFAULT_TEXT_BACKUP_MODELS = [
   "qwen/qwen3-32b",
   "openai/gpt-oss-20b",
 ];
-const DEFAULT_REQUEST_TIMEOUT_MS = 10000;
-const DEFAULT_TOTAL_TIMEOUT_MS = 25000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 5000;
+const DEFAULT_TOTAL_TIMEOUT_MS = 10000;
 const MAX_MODEL_ATTEMPTS = 4;
 
 type GroqChatPayload = Record<string, unknown> & {
