@@ -21,6 +21,15 @@ import { KaprukaSearchProduct, Product, toProduct } from "@/lib/productCatalog";
 export const runtime = "nodejs";
 
 const DEFAULT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_GIFT_MESSAGE_MODEL = "qwen/qwen3-32b";
+const DEFAULT_SINHALA_GIFT_MESSAGE_MODEL = "openai/gpt-oss-120b";
+const INITIAL_REPLY_CHIPS = [
+  "Find a gift",
+  "Find a cake",
+  "Find flowers",
+  "Find chocolates",
+  "Find perfume",
+];
 
 type CommerceRecommendation = {
   id: string;
@@ -243,36 +252,10 @@ function isDeliveryRequested(message: string) {
   );
 }
 
-function getLocalChips(
-  language: DetectedLanguage,
-  task: string,
-  deliveryRequested: boolean,
-) {
-  if (task === "eventPlan" || task === "giftBox") {
-    return [];
-  }
-
-  if (deliveryRequested) {
-    if (language === "Sinhala") {
-      return ["නගරය වෙනස් කරන්න", "දිනය වෙනස් කරන්න"];
-    }
-
-    if (language === "Singlish") {
-      return ["City eka wenas", "Date eka wenas"];
-    }
-
-    return ["Change city", "Change date"];
-  }
-
-  if (language === "Sinhala") {
-    return ["අයවැය වෙනස් කරන්න", "තෑග්ග වෙනස් කරන්න"];
-  }
-
-  if (language === "Singlish") {
-    return ["Budget eka wenas", "Gift type wenas"];
-  }
-
-  return ["Change budget", "Change gift type"];
+function getRandomInitialChips() {
+  return [...INITIAL_REPLY_CHIPS]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 2);
 }
 
 function getLocalAnalytics({
@@ -329,7 +312,7 @@ const giftTypeSearchTerms: Record<string, string> = {
   chocolates: "chocolate",
   electronics: "headphones",
   fashion: "watch",
-  flowers: "roses",
+  flowers: "roses bouquet",
   food: "chocolate",
   "gift box": "chocolate",
   perfumes: "perfume",
@@ -340,7 +323,7 @@ const categorySearchTerms: Record<string, string[]> = {
   chocolate: ["chocolate", "chocolates", "truffles"],
   electronics: ["electronics", "headphones", "earbuds"],
   fashion: ["fashion", "watch", "wallet", "handbag"],
-  flowers: ["flowers", "roses", "bouquet"],
+  flowers: ["roses", "rose bouquet", "bouquet"],
   perfumes: ["perfume", "fragrance", "cologne"],
 };
 
@@ -378,7 +361,7 @@ const categoryRelevanceTerms: Record<string, string[]> = {
     "accessory",
     "accessories",
   ],
-  flowers: ["flower", "flowers", "rose", "roses", "bouquet", "floral"],
+  flowers: ["rose", "roses", "bouquet", "floral"],
   perfumes: ["perfume", "perfumes", "fragrance", "fragrances", "cologne", "scent"],
 };
 
@@ -1797,16 +1780,17 @@ async function getGroqGiftMessage(
   profile: ShoppingProfile,
   preferences: GiftMessagePreferences,
 ) {
+  const isSinhala = preferences.language?.trim().toLowerCase() === "sinhala";
   const { response } = await fetchGroqChatWithFallback(apiKey, {
-    model:
-      process.env.GROQ_PROCESSING_MODEL ??
-      process.env.GROQ_COMMERCE_MODEL ??
-      DEFAULT_MODEL,
+    model: isSinhala
+      ? process.env.GROQ_SINHALA_GIFT_MESSAGE_MODEL ??
+        DEFAULT_SINHALA_GIFT_MESSAGE_MODEL
+      : process.env.GROQ_GIFT_MESSAGE_MODEL ?? DEFAULT_GIFT_MESSAGE_MODEL,
     messages: [
         {
           role: "system",
           content:
-            "Generate one polished gift card message. Use English unless another language is requested. Singlish means natural conversational Sinhala written entirely with Latin letters, not English; understand informal Singlish spelling and never use Sinhala script for a Singlish message. Respect size and tone. Return JSON only.",
+            `${isSinhala ? "" : "/no_think\n"}You are a native Sri Lankan gift-card writer. Generate one fresh, polished message in the explicitly requested language. Sinhala must use fluent, idiomatic Sinhala script rather than a literal word-for-word translation. Singlish must be natural conversational Sinhala written entirely with Latin letters, never English prose or Sinhala script. Natural Singlish style includes 'Obata subama suba upandinayak wewa!' and 'Oyata godak adarei. Hemadama sathutin saha nirogiwa inna.' Do not copy these examples. Respect the requested size, tone, relationship, occasion, and suggestions. Return exactly one JSON object containing a giftMessage string and no other text.`,
         },
         {
           role: "user",
@@ -1818,8 +1802,7 @@ async function getGroqGiftMessage(
         },
     ],
     temperature: 0.45,
-    max_completion_tokens: 260,
-    response_format: { type: "json_object" },
+    max_completion_tokens: 400,
   });
 
   if (!response.ok) {
@@ -1866,6 +1849,13 @@ export async function POST(request: Request) {
       const message = apiKey
         ? await getGroqGiftMessage(apiKey, profile, giftMessagePreferences)
         : "";
+
+      if (apiKey && !message) {
+        return NextResponse.json(
+          { error: "Groq did not return a valid updated gift message. Please try again." },
+          { status: 502 },
+        );
+      }
 
       return NextResponse.json({
         ...fallbackResponse,
@@ -2201,11 +2191,7 @@ export async function POST(request: Request) {
         profile: effectiveProfile,
         recommendations,
       }),
-      chips: getLocalChips(
-        resolvedMessageAnalysis.detectedLanguage,
-        task,
-        deliveryRequested,
-      ),
+      chips: getRandomInitialChips(),
       delivery,
       detectedLanguage: resolvedMessageAnalysis.detectedLanguage,
       mcp: {

@@ -10,7 +10,8 @@ Media routes use dedicated Groq model slugs because image and speech-to-text use
 | Main shopping direct reply | Replies to shopping, event, gift box, and general user messages after context is set. | `src/app/api/ai/commerce/route.ts` | Novita Gemma; current Groq reply on rate limit, timeout, or provider failure |
 | Standalone chatbot test page | Generates a short multilingual reply outside the main interface. | `src/app/api/ai/chatbot/route.ts` | Groq |
 | Commerce reasoning and ranking | Ranks real Kapruka MCP products, writes recommendation reasons, creates event/gift-box responses, and generates compare-mode tables. | `src/app/api/ai/commerce/route.ts` | use groq |
-| Commerce analytics and reply chips | Produces deterministic status, next action, risk, and localized follow-up controls without waiting for another model field. | `src/app/api/ai/commerce/route.ts` | Local code |
+| Reply chips | Randomly selects at most two choices from the initial starter-chip pool after each shopping reply. | `src/app/api/ai/commerce/route.ts` | Local code; no AI call |
+| Commerce analytics | Produces deterministic status, next action, and risk without waiting for another model field. | `src/app/api/ai/commerce/route.ts` | Local code |
 | Product comparison | User enters product IDs; the commerce route searches Kapruka MCP for product values and uses AI only for the AI suggestion field. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Order tracking AI suggestion | Kapruka MCP returns the tracking result, then AI writes a short next-step suggestion from that result. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Image search analysis | Analyzes uploaded image content to create product search hints. The raw analysis is not shown to the user. | `src/app/api/ai/image-analysis/route.ts` | `GROQ_VISION_MODEL`, otherwise `meta-llama/llama-4-scout-17b-16e-instruct` |

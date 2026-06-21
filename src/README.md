@@ -8,7 +8,8 @@ Kapruka Genie is a hosted-AI conversational commerce app styled from `Doc/sample
 - Assistant read-aloud: browser speech synthesis (no additional AI model)
 - Live products, delivery checks, and tracking: Kapruka MCP at `https://mcp.kapruka.com/mcp`
 - Ranking, event planning, gift boxes, and comparison: Groq over real MCP results
-- Reply chips and commerce analytics: generated locally
+- Reply chips: two randomly selected starter chips, generated locally
+- Commerce analytics: generated locally
 
 No AI models are downloaded locally. The browser calls local Next API routes, and those routes call hosted provider APIs.
 
@@ -43,6 +44,8 @@ GROQ_REPLY_MODEL=qwen/qwen3-32b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
 GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
 GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
+GROQ_GIFT_MESSAGE_MODEL=qwen/qwen3-32b
+GROQ_SINHALA_GIFT_MESSAGE_MODEL=openai/gpt-oss-120b
 GROQ_BACKUP_MODEL=llama-3.1-8b-instant
 GROQ_REQUEST_TIMEOUT_MS=5000
 GROQ_TOTAL_TIMEOUT_MS=10000
@@ -62,9 +65,11 @@ Gemma routed explicitly through Novita. The request runs in parallel with the ex
 call. If Novita is rate-limited, unavailable, times out, or returns an empty
 reply, the existing Groq-generated reply is used. Once Groq commerce reasoning
 is ready, the route waits no more than 200 ms for the parallel Novita reply.
-Ranking, comparisons, tracking suggestions, gift messages, context analysis,
-vision, and voice retain their existing providers. Reply chips and commerce
-analytics are generated locally to remove unnecessary model output.
+Ranking, comparisons, tracking suggestions, context analysis, vision, and voice
+retain their existing providers. Sinhala gift messages use Groq GPT-OSS 120B;
+other gift-message languages use Groq Qwen 3 32B by default. Reply chips randomly select
+up to two entries from the initial starter-chip pool locally, with no AI call.
+Commerce analytics remain local.
 
 Voice recognition and transcription always use Groq
 `whisper-large-v3-turbo`, restricted to English voice search. The model cannot

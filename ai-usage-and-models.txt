@@ -22,7 +22,7 @@ The direct reply field of the main shopping response uses Novita-hosted Gemma. A
 3. MAIN SHOPPING RESPONSE
    Purpose: Generate the direct chat reply in the selected language.
    Also generates with Groq: product ranking, fit scores, recommendation reasons, event-plan or gift-box checklist items, and optional gift-message output.
-   Generated locally: reply chips and commerce analytics such as buy-box health, conversion signal, next action, and risk.
+   Generated locally: up to two randomly selected initial reply chips, plus commerce analytics such as buy-box health, conversion signal, next action, and risk.
    API route: /api/ai/commerce
    Function: getGroqCommerce
    Direct reply primary model: Hugging Face google/gemma-4-31B-it routed through Novita
@@ -53,8 +53,10 @@ The direct reply field of the main shopping response uses Novita-hosted Gemma. A
    Purpose: Generate the gift message using the selected language, size, tone, preferences, and user suggestions.
    API route: /api/ai/commerce
    Function: getGroqGiftMessage
-   Primary model: llama-3.3-70b-versatile
-   Configuration order: GROQ_PROCESSING_MODEL -> GROQ_COMMERCE_MODEL -> code default
+   Sinhala model: openai/gpt-oss-120b
+   Sinhala configuration: GROQ_SINHALA_GIFT_MESSAGE_MODEL -> code default
+   Other-language model: qwen/qwen3-32b
+   Other-language configuration: GROQ_GIFT_MESSAGE_MODEL -> code default
 
 7. IMAGE ANALYSIS
    Purpose: Analyze an uploaded image and return a summary, visual labels, confidence scores, visible text, product hints, and a catalog search query.
@@ -115,8 +117,8 @@ FEATURES THAT DO NOT USE AI
 
 SUMMARY OF POSSIBLE AI CALL COUNTS
 
-- First typed message: usually 1 context-analysis call; after preferences are submitted, usually 2 commerce calls.
-- Later shopping message: usually 2 calls (message analysis + main response).
+- First typed message: usually 1 context-analysis call; after preferences are submitted, the commerce response uses message analysis, Groq ranking, and the parallel Novita direct reply.
+- Later shopping message: usually 2 Groq calls (message analysis and ranking) plus 1 parallel Novita direct-reply call.
 - Product comparison with valid IDs: usually 1 comparison call.
 - Tracking: 1 tracking-suggestion call after the non-AI MCP lookup.
 - Gift-message generation: 1 call.

@@ -205,7 +205,6 @@ const starterChips = [
   "Find flowers",
   "Find chocolates",
   "Find perfume",
-  "Same-day delivery",
 ];
 
 const languageOptions: Language[] = ["English", "Sinhala", "Singlish"];
@@ -1283,8 +1282,8 @@ export function KaprukaGenieApp() {
     return localizedLabel.trim().split(/\s+/u).slice(0, 3).join(" ");
   }
 
-  function getGuidedReplyChips(generatedChips: string[] = []) {
-    return [...new Set([...generatedChips, "Next item", "Suggest more"])];
+  function getGuidedReplyChips(replyChips: string[] = []) {
+    return replyChips.slice(0, 2);
   }
 
   function isRemovedGenericReplyChip(chip: string) {
@@ -3162,7 +3161,11 @@ export function KaprukaGenieApp() {
         throw new Error(data.error ?? "Gift message generation failed.");
       }
 
-      setGiftMessage(data.giftMessage || giftMessage);
+      if (!data.giftMessage?.trim()) {
+        throw new Error("No updated gift message was returned. Please try again.");
+      }
+
+      setGiftMessage(data.giftMessage);
       setStatus("Gift message ready.");
     } catch (error) {
       setStatus(getErrorMessage(error));
