@@ -21,8 +21,11 @@ import { KaprukaSearchProduct, Product, toProduct } from "@/lib/productCatalog";
 export const runtime = "nodejs";
 
 const DEFAULT_MODEL = "llama-3.3-70b-versatile";
-const DEFAULT_GIFT_MESSAGE_MODEL = "qwen/qwen3-32b";
+const DEFAULT_GIFT_MESSAGE_MODEL = "llama-3.3-70b-versatile";
 const DEFAULT_SINHALA_GIFT_MESSAGE_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_SINHALA_CHAT_MODEL = "openai/gpt-oss-120b";
+const DEFAULT_SINGLISH_CHAT_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_SINGLISH_GIFT_MESSAGE_MODEL = "llama-3.3-70b-versatile";
 const INITIAL_REPLY_CHIPS = [
   "Find a gift",
   "Find a cake",
@@ -1575,11 +1578,16 @@ async function getGroqCommerce(
         max_tokens: 120,
       })
     : Promise.resolve(null);
+  const groqCommerceModel =
+    language === "Sinhala"
+      ? process.env.GROQ_SINHALA_CHAT_MODEL ?? DEFAULT_SINHALA_CHAT_MODEL
+      : language === "Singlish"
+        ? process.env.GROQ_SINGLISH_CHAT_MODEL ?? DEFAULT_SINGLISH_CHAT_MODEL
+        : process.env.GROQ_PROCESSING_MODEL ??
+          process.env.GROQ_COMMERCE_MODEL ??
+          DEFAULT_MODEL;
   const groqCommercePromise = fetchGroqChatWithFallback(apiKey, {
-    model:
-      process.env.GROQ_PROCESSING_MODEL ??
-      process.env.GROQ_COMMERCE_MODEL ??
-      DEFAULT_MODEL,
+    model: groqCommerceModel,
     messages: [
           {
             role: "system",
@@ -1781,10 +1789,14 @@ async function getGroqGiftMessage(
   preferences: GiftMessagePreferences,
 ) {
   const isSinhala = preferences.language?.trim().toLowerCase() === "sinhala";
+  const isSinglish = preferences.language?.trim().toLowerCase() === "singlish";
   const { response } = await fetchGroqChatWithFallback(apiKey, {
     model: isSinhala
       ? process.env.GROQ_SINHALA_GIFT_MESSAGE_MODEL ??
         DEFAULT_SINHALA_GIFT_MESSAGE_MODEL
+      : isSinglish
+        ? process.env.GROQ_SINGLISH_GIFT_MESSAGE_MODEL ??
+          DEFAULT_SINGLISH_GIFT_MESSAGE_MODEL
       : process.env.GROQ_GIFT_MESSAGE_MODEL ?? DEFAULT_GIFT_MESSAGE_MODEL,
     messages: [
         {
@@ -1846,9 +1858,32 @@ export async function POST(request: Request) {
   try {
     if (task === "giftMessage") {
       const apiKey = getGroqApiKey();
-      const message = apiKey
-        ? await getGroqGiftMessage(apiKey, profile, giftMessagePreferences)
-        : "";
+      const huggingFaceApiKey = getHuggingFaceApiKey();
+      const novitaMessage = huggingFaceApiKey
+          ? await getHuggingFaceNovitaReply(huggingFaceApiKey, {
+              messages: [
+                {
+                  role: "system",
+                  content:
+                    "Write one fresh, polished gift-card message in the explicitly requested language. Sinhala must use natural Sinhala script. Singlish must be natural conversational Sinhala written only with Latin letters. Respect the requested size, tone, recipient, occasion, and suggestions. Return only the finished gift message with no label, JSON, quotation marks, or explanation.",
+                },
+                {
+                  role: "user",
+                  content: JSON.stringify({
+                    preferences: giftMessagePreferences,
+                    profile,
+                  }),
+                },
+              ],
+              temperature: 0.45,
+              max_tokens: 400,
+            })
+          : null;
+      const message =
+        novitaMessage?.trim() ||
+        (apiKey
+          ? await getGroqGiftMessage(apiKey, profile, giftMessagePreferences)
+          : "");
 
       if (apiKey && !message) {
         return NextResponse.json(

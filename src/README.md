@@ -44,9 +44,12 @@ GROQ_REPLY_MODEL=qwen/qwen3-32b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
 GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
 GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
-GROQ_GIFT_MESSAGE_MODEL=qwen/qwen3-32b
+GROQ_SINHALA_CHAT_MODEL=openai/gpt-oss-120b
+GROQ_SINGLISH_CHAT_MODEL=llama-3.3-70b-versatile
+GROQ_GIFT_MESSAGE_MODEL=llama-3.3-70b-versatile
 GROQ_SINHALA_GIFT_MESSAGE_MODEL=openai/gpt-oss-120b
-GROQ_BACKUP_MODEL=llama-3.1-8b-instant
+GROQ_SINGLISH_GIFT_MESSAGE_MODEL=llama-3.3-70b-versatile
+GROQ_BACKUP_MODEL=qwen/qwen3.6-27b
 GROQ_REQUEST_TIMEOUT_MS=5000
 GROQ_TOTAL_TIMEOUT_MS=10000
 MCP_REQUEST_TIMEOUT_MS=4000
@@ -70,6 +73,11 @@ retain their existing providers. Sinhala gift messages use Groq GPT-OSS 120B;
 other gift-message languages use Groq Qwen 3 32B by default. Reply chips randomly select
 up to two entries from the initial starter-chip pool locally, with no AI call.
 Commerce analytics remain local.
+
+The no-login admin dashboard at `/kapruka-admin` shows the fixed provider setup.
+Hugging Face through Novita generates visible shopping-chat replies and gift
+messages. Groq is used automatically when Novita is rate-limited, times out, or
+returns no usable reply.
 
 Voice recognition and transcription always use Groq
 `whisper-large-v3-turbo`, restricted to English voice search. The model cannot
