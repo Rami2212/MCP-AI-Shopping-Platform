@@ -2,7 +2,7 @@
 
 Kapruka Genie is a hosted-AI conversational commerce app styled from `Doc/sample.html` and based on `Doc/Overview.docx`.
 
-- Main shopping chat replies: Novita-hosted Qwen, with the existing Groq reply as an automatic fallback
+- Main shopping chat replies: Novita-hosted Gemma, with the existing Groq reply as an automatic fallback
 - First-message context analysis: Groq processing model
 - Image shopping and voice transcription: Groq vision and STT APIs
 - Assistant read-aloud: browser speech synthesis (no additional AI model)
@@ -37,7 +37,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Default Models
 
 ```dotenv
-HF_NOVITA_REPLY_MODEL=Qwen/Qwen3-Next-80B-A3B-Instruct:novita
+HF_NOVITA_REPLY_MODEL=google/gemma-4-31B-it:novita
 HF_NOVITA_REPLY_TIMEOUT_MS=4500
 GROQ_REPLY_MODEL=qwen/qwen3-32b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
@@ -58,7 +58,7 @@ can try the configured backup followed by built-in 8B, Qwen, and GPT-OSS
 fallbacks. Vision uses a separate vision-capable backup model.
 
 Only the direct `reply` field of the main shopping response uses Hugging Face
-Qwen routed explicitly through Novita. The request runs in parallel with the existing Groq commerce reasoning
+Gemma routed explicitly through Novita. The request runs in parallel with the existing Groq commerce reasoning
 call. If Novita is rate-limited, unavailable, times out, or returns an empty
 reply, the existing Groq-generated reply is used. Once Groq commerce reasoning
 is ready, the route waits no more than 200 ms for the parallel Novita reply.

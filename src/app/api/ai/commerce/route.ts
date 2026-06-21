@@ -12,7 +12,7 @@ import {
 } from "@/lib/groqHosted";
 import {
   getHuggingFaceApiKey,
-  getHuggingFaceNovitaQwenReply,
+  getHuggingFaceNovitaReply,
 } from "@/lib/huggingFaceNovita";
 import { createKaprukaMcpClient } from "@/lib/kaprukaMcp";
 import { toKaprukaLocationType } from "@/lib/deliveryLocations";
@@ -899,10 +899,10 @@ function getFreshProfile(
 ): ShoppingProfile {
   return {
     ...profile,
-    budget: preferences.budget ?? undefined,
-    category: preferences.category ?? undefined,
-    occasion: preferences.occasion ?? undefined,
-    recipient: preferences.recipient ?? undefined,
+    ...(preferences.budget ? { budget: preferences.budget } : {}),
+    ...(preferences.category ? { category: preferences.category } : {}),
+    ...(preferences.occasion ? { occasion: preferences.occasion } : {}),
+    ...(preferences.recipient ? { recipient: preferences.recipient } : {}),
   };
 }
 
@@ -1168,6 +1168,56 @@ function getNoProductListFallback(language: DetectedLanguage) {
   }
 
   return "Matching options are shown in the product cards.";
+}
+
+function getReplyLanguageInstruction(language: DetectedLanguage) {
+  if (language === "Sinhala") {
+    return "CRITICAL LANGUAGE RULE: Reply only in natural Sinhala using Sinhala script. Ignore the language used in the query. Do not write the reply in English or Singlish.";
+  }
+
+  if (language === "Singlish") {
+    return "CRITICAL LANGUAGE RULE: Reply only in natural conversational Sinhala written with Latin letters. Ignore the language used in the query. Every sentence must use Sinhala vocabulary and grammar such as oyage, mata, ona, puluwan, hoyala, balanna, or kiyanna. Do not write an English sentence and do not use Sinhala script.";
+  }
+
+  return "CRITICAL LANGUAGE RULE: Reply only in English.";
+}
+
+function isReplyInSelectedLanguage(
+  reply: string | null,
+  language: DetectedLanguage,
+) {
+  if (!reply?.trim()) {
+    return false;
+  }
+
+  if (language === "Sinhala") {
+    return /[\u0D80-\u0DFF]/u.test(reply);
+  }
+
+  if (language === "Singlish") {
+    if (/[\u0D80-\u0DFF]/u.test(reply)) {
+      return false;
+    }
+
+    const singlishWords =
+      reply.match(
+        /\b(?:api|balanna|dennam|eka|ekak|galapena|ganna|hari|hoyala|karanna|kiyanna|kohomada|mama|mata|mona|mokak|mokakda|nathuwa|ona|one|oya|oyage|oyata|puluwan|thawa|thiyenawa|tikak|wage|wena)\b/gi,
+      ) ?? [];
+
+    return new Set(singlishWords.map((word) => word.toLowerCase())).size >= 2;
+  }
+
+  return true;
+}
+
+function getLanguageSafeReply(
+  language: DetectedLanguage,
+  ...candidates: Array<string | null>
+) {
+  return (
+    candidates.find((reply) => isReplyInSelectedLanguage(reply, language)) ??
+    getNoProductListFallback(language)
+  );
 }
 
 function sanitizeChatReply(
@@ -1512,12 +1562,11 @@ async function getGroqCommerce(
 ) {
   const huggingFaceApiKey = getHuggingFaceApiKey();
   const directReplyPromise = huggingFaceApiKey
-    ? getHuggingFaceNovitaQwenReply(huggingFaceApiKey, {
+    ? getHuggingFaceNovitaReply(huggingFaceApiKey, {
         messages: [
           {
             role: "system",
-            content:
-              "You are the direct conversation voice for Kapruka Genie. Answer the user's actual message naturally and concisely. Answer questions directly, acknowledge or carry out commands, and respond naturally to conversation. Product cards update separately, so never say that you updated products. Never include product names, product IDs, prices, product categories, product examples, recommendation lists, bullets, or numbered lists. If exact matching products were not found, say so briefly and ask whether the user wants to change a preference; do not invent or suggest a substitute category. The selected replyLanguage is authoritative. For English, reply in English. For Sinhala, use Sinhala script. For Singlish, write natural conversational Sinhala entirely with Latin letters, not English or Sinhala script; use a simple tone like 'Hari, oyage request ekata galapena options hoyala denna puluwan.' English product terms may appear only when necessary. Do not reveal reasoning or include <think> blocks. Return one short paragraph only.",
+            content: `You are the direct conversation voice for Kapruka Genie. Answer the user's actual message naturally and concisely. Answer questions directly, acknowledge or carry out commands, and respond naturally to conversation. Product cards update separately, so never say that you updated products. Never include product names, product IDs, prices, product categories, product examples, recommendation lists, bullets, or numbered lists. If exact matching products were not found, say so briefly and ask whether the user wants to change a preference; do not invent or suggest a substitute category. The selected replyLanguage is authoritative. English product terms may appear only when necessary. Do not reveal reasoning or include <think> blocks. Return one short paragraph only. ${getReplyLanguageInstruction(language)}`,
           },
           {
             role: "user",
@@ -1551,8 +1600,7 @@ async function getGroqCommerce(
     messages: [
           {
             role: "system",
-            content:
-              "You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. Understand Singlish as natural Sinhala meaning written informally with Latin letters, including spelling variations. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. The selected replyLanguage is authoritative; never detect or switch language from the user's message. Write every user-facing field in replyLanguage. For Sinhala, use Sinhala script. For Singlish, write natural conversational Sinhala entirely with Latin letters; do not answer in English and do not use Sinhala script. English product terms may appear only when necessary. Analytics and reply chips are generated locally, so do not return them. Return JSON only.",
+            content: `You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. The reply must be one short paragraph with no bullet list or numbered list. Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. Analytics and reply chips are generated locally, so do not return them. Return JSON only. ${getReplyLanguageInstruction(language)}`,
         },
         {
           role: "user",
@@ -1597,10 +1645,13 @@ async function getGroqCommerce(
     },
   });
   const { response } = await groqCommercePromise;
-  const directReply = await Promise.race([
-    directReplyPromise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
-  ]);
+  const directReply =
+    language === "English"
+      ? await Promise.race([
+          directReplyPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
+        ])
+      : await directReplyPromise;
 
   if (!response.ok) {
     return {
@@ -1608,7 +1659,7 @@ async function getGroqCommerce(
       mode,
       recommendations: fallbackRecommendations(products),
       reply: sanitizeChatReply(
-        directReply || getNoProductListFallback(language),
+        getLanguageSafeReply(language, directReply),
         products,
         language,
       ),
@@ -1623,7 +1674,7 @@ async function getGroqCommerce(
       mode,
       recommendations: fallbackRecommendations(products),
       reply: sanitizeChatReply(
-        directReply || getNoProductListFallback(language),
+        getLanguageSafeReply(language, directReply),
         products,
         language,
       ),
@@ -1631,7 +1682,7 @@ async function getGroqCommerce(
   }
 
   const commerce = parseCommerceResponse(content, mode, products);
-  const reply = directReply || commerce.reply;
+  const reply = getLanguageSafeReply(language, directReply, commerce.reply);
 
   return {
     ...commerce,

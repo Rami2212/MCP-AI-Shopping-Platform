@@ -1,13 +1,13 @@
 # AI Usage
 
-This project uses Novita-hosted Qwen only for the direct main shopping reply. Groq remains responsible for context, commerce reasoning, fallback replies, vision, and speech-to-text tasks.
+This project uses Novita-hosted Gemma only for the direct main shopping reply. Groq remains responsible for context, commerce reasoning, fallback replies, vision, and speech-to-text tasks.
 
 Media routes use dedicated Groq model slugs because image and speech-to-text use different endpoint capabilities. Read-aloud uses the browser speech engine and does not call an AI model.
 
 | Task | Where Used | API Route | Model Used                                                                                      |
 | --- | --- | --- |-------------------------------------------------------------------------------------------------|
 | First-message context extraction | Detects budget, recipient, and occasion from the user's first shopping message before showing the context card. | `src/app/api/ai/context-analysis/route.ts` | use groq  |
-| Main shopping direct reply | Replies to shopping, event, gift box, and general user messages after context is set. | `src/app/api/ai/commerce/route.ts` | Novita Qwen; current Groq reply on rate limit, timeout, or provider failure |
+| Main shopping direct reply | Replies to shopping, event, gift box, and general user messages after context is set. | `src/app/api/ai/commerce/route.ts` | Novita Gemma; current Groq reply on rate limit, timeout, or provider failure |
 | Standalone chatbot test page | Generates a short multilingual reply outside the main interface. | `src/app/api/ai/chatbot/route.ts` | Groq |
 | Commerce reasoning and ranking | Ranks real Kapruka MCP products, writes recommendation reasons, creates event/gift-box responses, and generates compare-mode tables. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Commerce analytics and reply chips | Produces deterministic status, next action, risk, and localized follow-up controls without waiting for another model field. | `src/app/api/ai/commerce/route.ts` | Local code |

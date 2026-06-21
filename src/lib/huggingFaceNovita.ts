@@ -4,7 +4,7 @@ import { asRecord, getString, stripModelThinking } from "@/lib/aiPayload";
 export const HUGGING_FACE_CHAT_COMPLETIONS_URL =
   "https://router.huggingface.co/v1/chat/completions";
 
-const DEFAULT_REPLY_MODEL = "Qwen/Qwen3-Next-80B-A3B-Instruct:novita";
+const DEFAULT_REPLY_MODEL = "google/gemma-4-31B-it:novita";
 const DEFAULT_REPLY_TIMEOUT_MS = 4500;
 
 type HuggingFaceChatPayload = {
@@ -59,7 +59,7 @@ function getAssistantReply(payload: unknown) {
   return null;
 }
 
-export async function getHuggingFaceNovitaQwenReply(
+export async function getHuggingFaceNovitaReply(
   apiKey: string,
   payload: HuggingFaceChatPayload,
 ) {
