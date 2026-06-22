@@ -63,21 +63,21 @@ Each model attempt and the complete retry chain are time-limited. Text requests
 can try the configured backup followed by built-in 8B, Qwen, and GPT-OSS
 fallbacks. Vision uses a separate vision-capable backup model.
 
-Only the direct `reply` field of the main shopping response uses Hugging Face
-Gemma routed explicitly through Novita. The request runs in parallel with the existing Groq commerce reasoning
-call. If Novita is rate-limited, unavailable, times out, or returns an empty
-reply, the existing Groq-generated reply is used. Once Groq commerce reasoning
-is ready, the route waits no more than 200 ms for the parallel Novita reply.
-Ranking, comparisons, tracking suggestions, context analysis, vision, and voice
-retain their existing providers. Sinhala gift messages use Groq GPT-OSS 120B;
-other gift-message languages use Groq Qwen 3 32B by default. Reply chips randomly select
-up to two entries from the initial starter-chip pool locally, with no AI call.
-Commerce analytics remain local.
+Sinhala and Singlish shopping-chat replies use Hugging Face Gemma routed through
+Novita. English shopping-chat replies use Groq. Sinhala and Singlish gift
+messages also use Novita first, while English gift messages use Groq directly.
+If a Novita request is rate-limited, unavailable, times out, or returns an empty
+reply, the language-specific Groq response is used automatically. Ranking,
+comparisons, tracking suggestions, context analysis, vision, and voice retain
+their existing providers. Reply chips randomly select up to two entries from the
+initial starter-chip pool locally, with no AI call. Commerce analytics remain local.
 
 The no-login admin dashboard at `/kapruka-admin` shows the fixed provider setup.
-Hugging Face through Novita generates visible shopping-chat replies and gift
-messages. Groq is used automatically when Novita is rate-limited, times out, or
-returns no usable reply.
+Hugging Face through Novita generates Sinhala and Singlish shopping-chat replies;
+Groq generates English shopping-chat replies. Gift messages continue to use
+the same routing: Novita for Sinhala and Singlish, and Groq for English. Groq is
+used automatically when a Novita reply is rate-limited, times out, or returns
+no usable reply.
 
 Voice recognition and transcription always use Groq
 `whisper-large-v3-turbo`, restricted to English voice search. The model cannot

@@ -1,19 +1,57 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+
+const STATUS_BAR_HIDDEN_STORAGE_KEY = "kapruka-genie-status-bar-hidden";
 
 const services = [
   {
     title: "Chat replies",
-    primary: "Hugging Face / Novita",
-    fallback: "Groq language fallback",
+    primary: "Novita: Sinhala and Singlish · Groq: English",
+    fallback: "Groq fallback for Novita replies",
   },
   {
     title: "Gift messages",
-    primary: "Hugging Face / Novita",
-    fallback: "Groq language fallback",
+    primary: "Novita: Sinhala and Singlish · Groq: English",
+    fallback: "Groq fallback for Novita messages",
   },
 ];
 
 export default function KaprukaAdminPage() {
+  const [isStatusBarHidden, setIsStatusBarHidden] = useState(false);
+
+  useEffect(() => {
+    function syncStatusBarPreference() {
+      try {
+        setIsStatusBarHidden(
+          localStorage.getItem(STATUS_BAR_HIDDEN_STORAGE_KEY) === "true",
+        );
+      } catch {
+        setIsStatusBarHidden(false);
+      }
+    }
+
+    const animationFrame = window.requestAnimationFrame(syncStatusBarPreference);
+    window.addEventListener("storage", syncStatusBarPreference);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("storage", syncStatusBarPreference);
+    };
+  }, []);
+
+  function toggleStatusBar() {
+    setIsStatusBarHidden((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(STATUS_BAR_HIDDEN_STORAGE_KEY, String(next));
+      } catch {
+        // Keep the setting for this page load if browser storage is unavailable.
+      }
+      return next;
+    });
+  }
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#fff7bc_0,transparent_28%),linear-gradient(135deg,#fbf9fe_0%,#f1ebf8_100%)] px-4 py-10 text-[#1b1524] sm:px-8">
       <div className="mx-auto max-w-5xl">
@@ -26,8 +64,8 @@ export default function KaprukaAdminPage() {
               AI Admin
             </h1>
             <p className="mt-3 max-w-2xl text-base leading-7 text-[#71677e]">
-              Hugging Face through Novita is fixed as the primary generator. Groq
-              activates automatically only when the primary reply is unavailable.
+              Sinhala and Singlish chat replies use Novita, while English chat
+              replies use Groq. Gift messages follow the same language routing.
             </p>
           </div>
           <Link
@@ -66,11 +104,45 @@ export default function KaprukaAdminPage() {
           ))}
         </div>
 
+        <section className="mt-5 flex flex-col justify-between gap-4 rounded-3xl border border-[#e9e1f4] bg-white p-6 shadow-[0_20px_60px_rgba(63,36,109,0.06)] sm:flex-row sm:items-center">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-[#9b8bae]">
+              Shopping interface
+            </p>
+            <h2 className="mt-1 text-lg font-black text-[#3f246d]">
+              Hide status and error bar
+            </h2>
+            <p className="mt-1 text-sm text-[#71677e]">
+              Controls the status panel beside the See features button.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isStatusBarHidden}
+            onClick={toggleStatusBar}
+            className="flex h-12 items-center gap-3 self-start rounded-[14px] border border-[#e8e2f2] bg-[#f8f5fb] px-4 text-sm font-black text-[#3f246d] sm:self-auto"
+          >
+            <span
+              className={`relative h-6 w-11 rounded-full transition ${
+                isStatusBarHidden ? "bg-[#3f246d]" : "bg-[#d8cce7]"
+              }`}
+            >
+              <span
+                className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  isStatusBarHidden ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </span>
+            {isStatusBarHidden ? "Hidden" : "Visible"}
+          </button>
+        </section>
+
         <section className="mt-5 rounded-3xl border border-[#e9e1f4] bg-white p-6">
           <h2 className="text-lg font-black text-[#3f246d]">Groq fallback setup</h2>
           <p className="mt-1 text-sm text-[#71677e]">
-            These models supply the visible response only if Novita reaches a
-            limit, times out, or returns no usable reply.
+            For Sinhala and Singlish chat, these models supply the visible response
+            only if Novita reaches a limit, times out, or returns no usable reply.
           </p>
           <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
             <div className="rounded-2xl bg-[#f8f5fb] p-4">

@@ -1016,6 +1016,7 @@ const CHAT_STORE_NAME = "chat-state";
 const CHAT_STATE_KEY = "current";
 const CHAT_STORAGE_KEY = "kapruka-genie-chat-state";
 const INTRO_PANEL_STORAGE_KEY = "kapruka-genie-intro-panel-date";
+const STATUS_BAR_HIDDEN_STORAGE_KEY = "kapruka-genie-status-bar-hidden";
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
@@ -1191,6 +1192,7 @@ export function KaprukaGenieApp() {
   const [status, setStatus] = useState(
     "Groq chat and media ready. Kapruka MCP commerce ready.",
   );
+  const [isStatusBarVisible, setIsStatusBarVisible] = useState(true);
   const [activityMessage, setActivityMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isImageProcessing, setIsImageProcessing] = useState(false);
@@ -2061,6 +2063,22 @@ export function KaprukaGenieApp() {
       </div>
     );
   }
+
+  useEffect(() => {
+    function syncStatusBarPreference() {
+      try {
+        setIsStatusBarVisible(
+          localStorage.getItem(STATUS_BAR_HIDDEN_STORAGE_KEY) !== "true",
+        );
+      } catch {
+        setIsStatusBarVisible(true);
+      }
+    }
+
+    syncStatusBarPreference();
+    window.addEventListener("storage", syncStatusBarPreference);
+    return () => window.removeEventListener("storage", syncStatusBarPreference);
+  }, []);
 
   useEffect(() => {
     if (!isSending) {
@@ -4070,9 +4088,11 @@ export function KaprukaGenieApp() {
             </button>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-            <div className="min-w-0 rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)] md:max-w-[440px]">
-              {status}
-            </div>
+            {isStatusBarVisible ? (
+              <div className="min-w-0 rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)] md:max-w-[440px]">
+                {status}
+              </div>
+            ) : null}
             <Link
               href="/features"
               className="hidden h-11 place-items-center rounded-[13px] border border-[#e8e2f2] bg-white px-4 text-sm font-black text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] xl:grid"

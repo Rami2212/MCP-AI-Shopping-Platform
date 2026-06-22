@@ -1547,7 +1547,8 @@ async function getGroqCommerce(
   productSearch: ProductSearchResult | null,
 ) {
   const huggingFaceApiKey = getHuggingFaceApiKey();
-  const directReplyPromise = huggingFaceApiKey
+  const directReplyPromise =
+    language !== "English" && huggingFaceApiKey
     ? getHuggingFaceNovitaReply(huggingFaceApiKey, {
         messages: [
           {
@@ -1859,7 +1860,9 @@ export async function POST(request: Request) {
     if (task === "giftMessage") {
       const apiKey = getGroqApiKey();
       const huggingFaceApiKey = getHuggingFaceApiKey();
-      const novitaMessage = huggingFaceApiKey
+      const useNovitaGiftMessage =
+        giftMessagePreferences.language?.trim().toLowerCase() !== "english";
+      const novitaMessage = useNovitaGiftMessage && huggingFaceApiKey
           ? await getHuggingFaceNovitaReply(huggingFaceApiKey, {
               messages: [
                 {
