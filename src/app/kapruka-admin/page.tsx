@@ -139,12 +139,18 @@ export default function KaprukaAdminPage() {
         </section>
 
         <section className="mt-5 rounded-3xl border border-[#e9e1f4] bg-white p-6">
-          <h2 className="text-lg font-black text-[#3f246d]">Groq fallback setup</h2>
+          <h2 className="text-lg font-black text-[#3f246d]">Groq model setup</h2>
           <p className="mt-1 text-sm text-[#71677e]">
-            For Sinhala and Singlish chat, these models supply the visible response
-            only if Novita reaches a limit, times out, or returns no usable reply.
+            English uses Groq directly. Sinhala and Singlish use these Groq models
+            when Novita reaches a limit, times out, or returns no usable reply.
           </p>
-          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl bg-[#f8f5fb] p-4">
+              <strong className="block text-[#3f246d]">English</strong>
+              <span className="mt-1 block break-all text-[#71677e]">
+                openai/gpt-oss-120b
+              </span>
+            </div>
             <div className="rounded-2xl bg-[#f8f5fb] p-4">
               <strong className="block text-[#3f246d]">Sinhala</strong>
               <span className="mt-1 block break-all text-[#71677e]">

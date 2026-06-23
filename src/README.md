@@ -44,6 +44,7 @@ GROQ_REPLY_MODEL=qwen/qwen3-32b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
 GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
 GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
+GROQ_ENGLISH_CHAT_MODEL=openai/gpt-oss-120b
 GROQ_SINHALA_CHAT_MODEL=openai/gpt-oss-120b
 GROQ_SINGLISH_CHAT_MODEL=llama-3.3-70b-versatile
 GROQ_GIFT_MESSAGE_MODEL=llama-3.3-70b-versatile
@@ -71,6 +72,11 @@ reply, the language-specific Groq response is used automatically. Ranking,
 comparisons, tracking suggestions, context analysis, vision, and voice retain
 their existing providers. Reply chips randomly select up to two entries from the
 initial starter-chip pool locally, with no AI call. Commerce analytics remain local.
+
+Shopping replies use the latest three conversation messages for continuity.
+All suggested product cards are filtered against the active preset or custom
+budget before they reach the interface. Smart Shopping includes a working
+`Suggest more` chip that rotates or reloads additional budget-matched products.
 
 The no-login admin dashboard at `/kapruka-admin` shows the fixed provider setup.
 Hugging Face through Novita generates Sinhala and Singlish shopping-chat replies;

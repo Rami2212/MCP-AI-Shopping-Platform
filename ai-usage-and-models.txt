@@ -14,6 +14,7 @@ The direct reply field of the main shopping response uses Novita-hosted Gemma. A
 
 2. CURRENT SHOPPING MESSAGE ANALYSIS
    Purpose: Classify the latest message as a question, command, or conversation; extract only current preferences; create the product search query; translate a specific requested gift type into English search terms when needed.
+   Context: Latest three conversation messages.
    API route: /api/ai/commerce
    Function: getGroqMessageAnalysis
    Primary model: llama-3.3-70b-versatile
@@ -21,6 +22,9 @@ The direct reply field of the main shopping response uses Novita-hosted Gemma. A
 
 3. MAIN SHOPPING RESPONSE
    Purpose: Generate the direct chat reply in the selected language.
+   Context: Latest three conversation messages.
+   English Groq model: openai/gpt-oss-120b
+   Budget enforcement: Out-of-range products are removed before ranking and response output.
    Also generates with Groq: product ranking, fit scores, recommendation reasons, event-plan or gift-box checklist items, and optional gift-message output.
    Generated locally: up to two randomly selected initial reply chips, plus commerce analytics such as buy-box health, conversion signal, next action, and risk.
    API route: /api/ai/commerce

@@ -207,6 +207,13 @@ const starterChips = [
   "Find perfume",
 ];
 
+const starterChipGiftTypes: Record<string, string> = {
+  "Find a cake": "Cakes",
+  "Find chocolates": "Chocolate",
+  "Find flowers": "Flowers",
+  "Find perfume": "Perfumes",
+};
+
 const languageOptions: Language[] = ["English", "Sinhala", "Singlish"];
 
 const languageLabels: Record<Language, string> = {
@@ -2463,6 +2470,13 @@ export function KaprukaGenieApp() {
     const timeoutId = window.setTimeout(() => controller.abort(), 28000);
     const requestBody = JSON.stringify({
       cartIds: buyBox.map((product) => product.id),
+      conversationHistory: messages
+        .filter(
+          (message) =>
+            message.role === "user" || message.role === "assistant",
+        )
+        .slice(-3)
+        .map(({ content, role }) => ({ content, role })),
       language,
       mode,
       profile: requestProfile,
@@ -2929,6 +2943,58 @@ export function KaprukaGenieApp() {
     }
   }
 
+  async function handleSuggestMoreShopping() {
+    if (isSending) {
+      return;
+    }
+
+    if (!profile.budget) {
+      setStatus("Choose a budget before requesting more products.");
+      return;
+    }
+
+    if (recommendedProducts.length > 3) {
+      setRecommendedProducts((current) => [
+        ...current.slice(3),
+        ...current.slice(0, 3),
+      ]);
+      addMessage({
+        role: "assistant",
+        content:
+          language === "Singlish"
+            ? "Thawa budget ekata galapena options pennanawa."
+            : language === "Sinhala"
+              ? "ඔබේ අයවැයට ගැළපෙන තවත් විකල්ප පෙන්වන්නම්."
+              : "Here are more options within your budget.",
+      });
+      setStatus("More budget-matched products shown.");
+      return;
+    }
+
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    try {
+      const commerceData = await runCommerce(
+        `${profile.category || "gift"} more options`,
+        activeMode,
+        profile,
+        false,
+        "Suggest more",
+        true,
+      );
+      addMessage({
+        role: "assistant",
+        content: getCommerceReply(commerceData),
+      });
+      setStatus("More budget-matched products loaded.");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
   function handleChipClick(chip: string) {
     if (chip === "Next item") {
       void handleNextGuidedItem();
@@ -2936,11 +3002,15 @@ export function KaprukaGenieApp() {
     }
 
     if (chip === "Suggest more") {
-      void handleSuggestMoreGuidedItem();
+      if (activeMode === "Smart Shopping") {
+        void handleSuggestMoreShopping();
+      } else {
+        void handleSuggestMoreGuidedItem();
+      }
       return;
     }
 
-    void submitText(getLocalizedUserText(chip));
+    void submitText(getLocalizedUserText(chip), starterChipGiftTypes[chip]);
   }
 
   async function handleRetryMessage(message: ChatMessage) {
@@ -2981,7 +3051,7 @@ export function KaprukaGenieApp() {
     }
   }
 
-  async function submitText(nextText: string) {
+  async function submitText(nextText: string, starterGiftType?: string) {
     const content = nextText.trim();
     if (!content || isSending) {
       return;
@@ -2998,7 +3068,28 @@ export function KaprukaGenieApp() {
     setActivityMessage(text.processing);
 
     try {
-      if (conversationStage === "collecting-context") {
+      if (starterGiftType) {
+        const nextProfile = { ...profile, category: starterGiftType };
+        setProfile(nextProfile);
+        setPendingUserRequest(content);
+
+        if (conversationStage === "first-message") {
+          showContextPanel(nextProfile, language);
+        } else {
+          const commerceData = await runCommerce(
+            content,
+            activeMode,
+            nextProfile,
+            false,
+            content,
+            true,
+          );
+          setMessages((current) => [
+            ...current,
+            { role: "assistant", content: getCommerceReply(commerceData) },
+          ]);
+        }
+      } else if (conversationStage === "collecting-context") {
         setConversationStage("ready");
         await answerWithCollectedContext(
           pendingUserRequest || content,

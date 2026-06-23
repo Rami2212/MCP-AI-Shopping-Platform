@@ -4,6 +4,7 @@ import {
   getNumber,
   getString,
   stripModelThinking,
+  type ChatMessage,
 } from "@/lib/aiPayload";
 import {
   fetchGroqChatWithFallback,
@@ -26,6 +27,7 @@ const DEFAULT_SINHALA_GIFT_MESSAGE_MODEL = "openai/gpt-oss-120b";
 const DEFAULT_SINHALA_CHAT_MODEL = "openai/gpt-oss-120b";
 const DEFAULT_SINGLISH_CHAT_MODEL = "llama-3.3-70b-versatile";
 const DEFAULT_SINGLISH_GIFT_MESSAGE_MODEL = "llama-3.3-70b-versatile";
+const DEFAULT_ENGLISH_CHAT_MODEL = "openai/gpt-oss-120b";
 const INITIAL_REPLY_CHIPS = [
   "Find a gift",
   "Find a cake",
@@ -261,6 +263,11 @@ function getRandomInitialChips() {
     .slice(0, 2);
 }
 
+function getShoppingReplyChips() {
+  const [randomStarterChip] = getRandomInitialChips();
+  return ["Suggest more", randomStarterChip].filter(Boolean).slice(0, 2);
+}
+
 function getLocalAnalytics({
   delivery,
   deliveryRequested,
@@ -378,6 +385,32 @@ function parseStringArray(value: unknown, maxItems: number) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, maxItems);
+}
+
+function parseConversationHistory(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+      const role = getString(record, "role");
+      const content = getString(record, "content")?.trim();
+
+      if ((role !== "user" && role !== "assistant") || !content) {
+        return null;
+      }
+
+      return { role, content };
+    })
+    .filter(
+      (
+        message,
+      ): message is { role: "user" | "assistant"; content: string } =>
+        message !== null,
+    )
+    .slice(-3);
 }
 
 function parseChipArray(value: unknown, maxItems: number) {
@@ -641,6 +674,27 @@ function isProductInsideBudget(product: Product, filter: BudgetFilter) {
   }
 
   return true;
+}
+
+function getActiveBudgetFilter(
+  profile: ShoppingProfile,
+  latestUserMessage: string,
+  conversationHistory: ChatMessage[],
+) {
+  const currentFilter = parseBudgetFilter(latestUserMessage, profile.budget);
+  if (hasBudgetFilter(currentFilter)) {
+    return currentFilter;
+  }
+
+  for (const message of [...conversationHistory].reverse()) {
+    if (message.role !== "user") continue;
+    const historicalFilter = parseBudgetFilter(message.content);
+    if (hasBudgetFilter(historicalFilter)) {
+      return historicalFilter;
+    }
+  }
+
+  return parseBudgetFilter(profile.budget);
 }
 
 function getPreferenceSearchTerms(query: string, profile: ShoppingProfile) {
@@ -968,6 +1022,7 @@ async function getGroqMessageAnalysis(
   mode: string,
   query: string,
   latestUserMessage: string,
+  conversationHistory: ChatMessage[],
 ) {
   const { response } = await fetchGroqChatWithFallback(apiKey, {
     model:
@@ -999,6 +1054,7 @@ async function getGroqMessageAnalysis(
               searchQuery: "2-5 English catalog words, or empty string",
             },
             latestUserMessage,
+            recentConversation: conversationHistory,
             message: query,
             mode,
             selectedLanguage: language,
@@ -1545,6 +1601,7 @@ async function getGroqCommerce(
   messageAnalysis: MessageAnalysis,
   searchQuery: string,
   productSearch: ProductSearchResult | null,
+  conversationHistory: ChatMessage[],
 ) {
   const huggingFaceApiKey = getHuggingFaceApiKey();
   const directReplyPromise =
@@ -1559,6 +1616,7 @@ async function getGroqCommerce(
             role: "user",
             content: JSON.stringify({
               delivery,
+              recentConversation: conversationHistory,
               exactCatalogMatchCount: products.length,
               messageIntent: messageAnalysis.intent,
               mode,
@@ -1584,9 +1642,7 @@ async function getGroqCommerce(
       ? process.env.GROQ_SINHALA_CHAT_MODEL ?? DEFAULT_SINHALA_CHAT_MODEL
       : language === "Singlish"
         ? process.env.GROQ_SINGLISH_CHAT_MODEL ?? DEFAULT_SINGLISH_CHAT_MODEL
-        : process.env.GROQ_PROCESSING_MODEL ??
-          process.env.GROQ_COMMERCE_MODEL ??
-          DEFAULT_MODEL;
+        : process.env.GROQ_ENGLISH_CHAT_MODEL ?? DEFAULT_ENGLISH_CHAT_MODEL;
   const groqCommercePromise = fetchGroqChatWithFallback(apiKey, {
     model: groqCommerceModel,
     messages: [
@@ -1598,6 +1654,7 @@ async function getGroqCommerce(
           role: "user",
           content: JSON.stringify({
             delivery,
+            recentConversation: conversationHistory,
             expectedSchema: {
               eventPlan: ["optional checklist line"],
               giftMessage: "optional generated message",
@@ -1850,6 +1907,9 @@ export async function POST(request: Request) {
   const preserveProfile = bodyRecord?.preserveProfile === true;
   const cartIds = parseStringArray(bodyRecord?.cartIds, 30);
   const requestedProductIds = parseStringArray(bodyRecord?.productIds, 3);
+  const conversationHistory = parseConversationHistory(
+    bodyRecord?.conversationHistory,
+  );
   const profile = parseProfile(bodyRecord?.profile);
   const checkout = parseCheckoutDetails(bodyRecord?.checkout);
   const giftMessagePreferences = parseGiftMessagePreferences(
@@ -1998,6 +2058,7 @@ export async function POST(request: Request) {
               mode,
               query,
               userMessage,
+              conversationHistory,
             ),
             4000,
           ).catch(() => null)
@@ -2037,9 +2098,12 @@ export async function POST(request: Request) {
         };
     const effectiveProfile = preserveProfile
       ? profile
-      : messageAnalysis
-        ? getFreshProfile(profile, resolvedMessageAnalysis.preferences)
-        : profile;
+      : getFreshProfile(profile, resolvedMessageAnalysis.preferences);
+    const activeBudgetFilter = getActiveBudgetFilter(
+      effectiveProfile,
+      userMessage,
+      conversationHistory,
+    );
     const searchQuery =
       productIdsForCompare.length >= 2
         ? productIdsForCompare.join(" ")
@@ -2065,7 +2129,9 @@ export async function POST(request: Request) {
             mcp,
             searchQuery,
             effectiveProfile,
-            query,
+            hasBudgetFilter(activeBudgetFilter)
+              ? `${query} ${formatBudgetFilter(activeBudgetFilter)}`
+              : query,
           ).then((productSearch) => ({
             productSearch,
             results: productSearch.results,
@@ -2075,9 +2141,15 @@ export async function POST(request: Request) {
       canonicalCityPromise,
     ]);
     const { productSearch, results: searchResults } = searchOutcome;
-    const products = searchResults
+    const normalizedProducts = searchResults
       .map((product) => toProduct(product))
       .filter((product): product is Product => product !== null);
+    const products =
+      task === "compare" || !hasBudgetFilter(activeBudgetFilter)
+        ? normalizedProducts
+        : normalizedProducts.filter((product) =>
+            isProductInsideBudget(product, activeBudgetFilter),
+          );
 
     if (task === "initial") {
       const recommendations = fallbackRecommendations(products);
@@ -2203,6 +2275,7 @@ export async function POST(request: Request) {
       resolvedMessageAnalysis,
       searchQuery,
       productSearch,
+      conversationHistory,
     );
 
     if (commerce instanceof NextResponse) {
@@ -2229,7 +2302,10 @@ export async function POST(request: Request) {
         profile: effectiveProfile,
         recommendations,
       }),
-      chips: getRandomInitialChips(),
+      chips:
+        mode === "Smart Shopping"
+          ? getShoppingReplyChips()
+          : getRandomInitialChips(),
       delivery,
       detectedLanguage: resolvedMessageAnalysis.detectedLanguage,
       mcp: {
