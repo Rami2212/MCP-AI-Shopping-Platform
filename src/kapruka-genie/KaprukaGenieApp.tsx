@@ -33,7 +33,9 @@ type IconName =
   | "heart"
   | "menu"
   | "mic"
+  | "plus"
   | "search"
+  | "send"
   | "settings"
   | "speaker"
   | "sparkles"
@@ -172,11 +174,14 @@ type StoredChatState = {
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
   extendedPreferences?: ExtendedPreferences;
+  fitReasons?: Record<string, string>;
   input: string;
   language: Language;
   messages: ChatMessage[];
   pendingUserRequest: string;
   profile: ShoppingProfile;
+  buyBox?: Product[];
+  recommendedProducts?: Product[];
   activeMode?: string;
   modeSessions?: Record<string, ModeSession>;
 };
@@ -186,10 +191,12 @@ type ModeSession = {
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
   extendedPreferences?: ExtendedPreferences;
+  fitReasons?: Record<string, string>;
   input: string;
   messages: ChatMessage[];
   pendingUserRequest: string;
   profile: ShoppingProfile;
+  recommendedProducts?: Product[];
 };
 
 const modes = [
@@ -606,7 +613,9 @@ function normalizeModeSession(session: ModeSession): ModeSession {
     extendedPreferences:
       session.extendedPreferences ??
       getExtendedPreferencesFromProfile(normalizedProfile),
+    fitReasons: session.fitReasons ?? {},
     profile: normalizedProfile,
+    recommendedProducts: session.recommendedProducts ?? [],
   };
 }
 
@@ -775,7 +784,7 @@ const copy: Record<
     city: "City eka",
     clearHistory: "History clear karanna",
     comparePrompt: "Product IDs 2k hari 3k hari denna. Mama table ekakin compare karannam.",
-    continueWithoutContext: "Preferences nathuwa continue",
+    continueWithoutContext: "Preferences nathuwa idiriyata",
     contextIntro:
       "Oyage message eken details detect kala.",
     contextTitle: "Shopping preferences set karanna",
@@ -898,45 +907,45 @@ const optionLabels: Record<Language, Record<string, string>> = {
   English: {},
   Sinhala: {
     "Above Rs. 10,000": "Rs. 10,000 ට වැඩි",
-    Anniversary: "Anniversary",
-    Birthday: "Birthday",
+    Anniversary: "\u0dc3\u0d82\u0dc0\u0dad\u0dca\u0dc3\u0dbb\u0dba",
+    Birthday: "\u0d8b\u0db4\u0db1\u0dca\u0daf\u0dd2\u0db1\u0dba",
     Child: "ළමයෙක්",
-    Chocolate: "Chocolate",
+    Chocolate: "\u0da0\u0ddc\u0d9a\u0dbd\u0da7\u0dca",
     Couple: "Couple",
-    Cakes: "Cakes",
+    Cakes: "\u0d9a\u0dda\u0d9a\u0dca",
     Electronics: "Electronics",
     Fashion: "Fashion",
     Female: "කාන්තාවක්",
-    Flowers: "Flowers",
-    Graduation: "Graduation",
+    Flowers: "\u0db8\u0dbd\u0dca",
+    Graduation: "\u0d8b\u0db4\u0dcf\u0db0\u0dd2 \u0db4\u0dca\u0dbb\u0daf\u0dcf\u0db1\u0dba",
     Male: "පුරුෂයෙක්",
     Other: "වෙනත්",
-    Perfumes: "Perfumes",
+    Perfumes: "\u0dc3\u0dd4\u0dc0\u0db3 \u0dc0\u0dd2\u0dbd\u0dc0\u0dd4\u0db1\u0dca",
     "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
     "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
     "Under Rs. 2,500": "Rs. 2,500 ට අඩු",
-    Wedding: "Wedding",
+    Wedding: "\u0dc0\u0dd2\u0dc0\u0dcf\u0dc4\u0dba",
   },
   Singlish: {
     "Above Rs. 10,000": "Rs. 10,000 ta wedi",
-    Anniversary: "Anniversary",
-    Birthday: "Birthday",
+    Anniversary: "Sanwathsare",
+    Birthday: "Upandinaya",
     Child: "Child",
     Chocolate: "Chocolate",
     Couple: "Couple",
-    Cakes: "Cakes",
+    Cakes: "Cake",
     Electronics: "Electronics",
     Fashion: "Fashion",
     Female: "Female",
-    Flowers: "Flowers",
-    Graduation: "Graduation",
+    Flowers: "Mal",
+    Graduation: "Upadhi pradanaya",
     Male: "Male",
     Other: "Wenas",
-    Perfumes: "Perfumes",
+    Perfumes: "Perfume",
     "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
     "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
     "Under Rs. 2,500": "Rs. 2,500 ta adu",
-    Wedding: "Wedding",
+    Wedding: "Vivahaya",
   },
 };
 
@@ -1060,7 +1069,9 @@ const iconPaths: Record<IconName, string> = {
     "M12 20s-7-4.4-9-9c-1.2-2.8.8-5.8 3.8-5.8 1.8 0 3.1 1 4.2 2.4 1.1-1.4 2.4-2.4 4.2-2.4 3 0 5 3 3.8 5.8-2 4.6-9 9-9 9Z",
   menu: "M4 6h16M4 12h16M4 18h16",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-7 9a7 7 0 0 0 14 0m-7 7v3m-4 0h8",
+  plus: "M12 5v14M5 12h14",
   search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5",
+  send: "M12 5v14m0-14-5 5m5-5 5 5",
   settings:
     "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v3m0 12v3M4.9 4.9 7 7m10 10 2.1 2.1M3 12h3m12 0h3M4.9 19.1 7 17m10-10 2.1-2.1",
   speaker: "M4 9v6h4l5 4V5L8 9H4Zm12 1a4 4 0 0 1 0 4m2-7a8 8 0 0 1 0 10",
@@ -1210,6 +1221,7 @@ export function KaprukaGenieApp() {
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldSendRecordingRef = useRef(false);
   const audioChunksRef = useRef<Blob[]>([]);
+  const chatSoundContextRef = useRef<AudioContext | null>(null);
   const initialProductsLoadedRef = useRef(false);
 
   const [activeMode, setActiveMode] = useState("Smart Shopping");
@@ -1292,6 +1304,7 @@ export function KaprukaGenieApp() {
     });
   const [isGiftMessageGenerating, setIsGiftMessageGenerating] = useState(false);
   const [isIntroPanelVisible, setIsIntroPanelVisible] = useState(false);
+  const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -1400,10 +1413,12 @@ export function KaprukaGenieApp() {
         extendedPreferences: getExtendedPreferencesFromProfile(
           initialShoppingProfile,
         ),
+        fitReasons: {},
         input: "",
         messages: starterMessagesByLanguage[language],
         pendingUserRequest: "",
         profile: normalizeShoppingProfile(initialShoppingProfile),
+        recommendedProducts: [],
       };
     }
 
@@ -1414,6 +1429,7 @@ export function KaprukaGenieApp() {
       contextDraft: emptyContextDraft,
       conversationStage: needsContext ? "collecting-context" : "ready",
       extendedPreferences: getExtendedPreferencesFromProfile(profile),
+      fitReasons: {},
       input: "",
       messages: [
         {
@@ -1428,6 +1444,7 @@ export function KaprukaGenieApp() {
           ? "Build a gift box"
           : "",
       profile: normalizeShoppingProfile(profile),
+      recommendedProducts: [],
     };
   }
 
@@ -1437,10 +1454,12 @@ export function KaprukaGenieApp() {
       contextDraft,
       conversationStage,
       extendedPreferences,
+      fitReasons,
       input,
       messages,
       pendingUserRequest,
       profile: normalizeShoppingProfile(profile),
+      recommendedProducts,
     };
   }
 
@@ -1454,10 +1473,12 @@ export function KaprukaGenieApp() {
       normalizedSession.extendedPreferences ??
         getExtendedPreferencesFromProfile(normalizedSession.profile),
     );
+    setFitReasons(normalizedSession.fitReasons ?? {});
     setInput(normalizedSession.input);
     setMessages(normalizedSession.messages);
     setPendingUserRequest(normalizedSession.pendingUserRequest);
     setProfile(normalizedSession.profile);
+    setRecommendedProducts(normalizedSession.recommendedProducts ?? []);
   }
 
   function resetToolPanels() {
@@ -2236,10 +2257,12 @@ export function KaprukaGenieApp() {
               extendedPreferences:
                 storedState.extendedPreferences ??
                 getExtendedPreferencesFromProfile(storedState.profile),
+              fitReasons: storedState.fitReasons ?? {},
               input: storedState.input,
               messages: storedState.messages,
               pendingUserRequest: storedState.pendingUserRequest,
               profile: normalizeShoppingProfile(storedState.profile),
+              recommendedProducts: storedState.recommendedProducts ?? [],
             };
           const shouldUseFreshStarterChips =
             restoredSession.conversationStage === "first-message" &&
@@ -2254,6 +2277,7 @@ export function KaprukaGenieApp() {
           setActiveMode(restoredMode);
           setLanguage(storedState.language);
           setModeSessions(restoredSessions);
+          setBuyBox(storedState.buyBox ?? []);
           applyModeSession(sessionToApply);
         }
       } catch (error) {
@@ -2285,9 +2309,13 @@ export function KaprukaGenieApp() {
       contextDraft,
       conversationStage,
       extendedPreferences,
+      fitReasons,
       input,
       language,
       messages,
+      buyBox,
+      profile,
+      recommendedProducts,
       modeSessions: {
         ...modeSessions,
         [activeMode]: {
@@ -2295,14 +2323,15 @@ export function KaprukaGenieApp() {
           contextDraft,
           conversationStage,
           extendedPreferences,
+          fitReasons,
           input,
           messages,
           pendingUserRequest,
           profile,
+          recommendedProducts,
         },
       },
       pendingUserRequest,
-      profile,
     });
   }, [
     activeMode,
@@ -2310,17 +2339,30 @@ export function KaprukaGenieApp() {
     contextDraft,
     conversationStage,
     extendedPreferences,
+    fitReasons,
     input,
     isChatStateLoaded,
     language,
     messages,
+    buyBox,
     modeSessions,
     pendingUserRequest,
     profile,
+    recommendedProducts,
   ]);
 
   useEffect(() => {
+    if (!isChatStateLoaded) {
+      return;
+    }
+
     if (initialProductsLoadedRef.current) {
+      return;
+    }
+
+    if (recommendedProducts.length > 0) {
+      initialProductsLoadedRef.current = true;
+      window.setTimeout(() => setIsLoadingInitialProducts(false), 0);
       return;
     }
 
@@ -2450,10 +2492,70 @@ export function KaprukaGenieApp() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isChatStateLoaded, recommendedProducts.length]);
 
   function addMessage(message: ChatMessage) {
+    if (message.role === "assistant") {
+      playChatSound("receive");
+    }
     setMessages((current) => [...current, message]);
+  }
+
+  function appendAssistantMessage(content: string) {
+    addMessage({
+      role: "assistant",
+      content,
+    });
+  }
+
+  function playChatSound(type: "receive" | "send") {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    try {
+      const context =
+        chatSoundContextRef.current ?? new AudioContextCtor();
+
+      chatSoundContextRef.current = context;
+
+      if (context.state === "suspended") {
+        void context.resume().catch(() => undefined);
+      }
+
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startAt = context.currentTime;
+      const duration = type === "send" ? 0.08 : 0.12;
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(
+        type === "send" ? 660 : 520,
+        startAt,
+      );
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.03, startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        startAt + duration,
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + duration);
+    } catch {
+      // Ignore audio playback failures so chat flow stays uninterrupted.
+    }
   }
 
   function updateSelectedPreference(
@@ -2826,29 +2928,19 @@ export function KaprukaGenieApp() {
         requestProfile,
         false,
       );
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
-            planItems,
-            0,
-            language,
-          )}`,
-        },
-      ]);
+      appendAssistantMessage(
+        `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
+          planItems,
+          0,
+          language,
+        )}`,
+      );
       setChips(getGuidedReplyChips(commerceData.chips));
       setStatus("Guided suggestions ready.");
       return;
     }
 
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getCommerceReply(commerceData),
-      },
-    ]);
+    appendAssistantMessage(getCommerceReply(commerceData));
     setStatus("Groq reply complete. Kapruka MCP commerce panels updated.");
   }
 
@@ -2943,26 +3035,14 @@ export function KaprukaGenieApp() {
     setStatus("Groq is answering. Kapruka MCP is searching products.");
     const commerceData = await runCommerce(content);
 
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getCommerceReply(commerceData),
-      },
-    ]);
+    appendAssistantMessage(getCommerceReply(commerceData));
     setStatus("Groq chat complete. Kapruka MCP commerce panels updated.");
   }
 
   async function handleGuidedCustomMessage(content: string) {
     setStatus("Groq is answering and finding related guided options.");
     const commerceData = await runCommerce(content);
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getCommerceReply(commerceData),
-      },
-    ]);
+    appendAssistantMessage(getCommerceReply(commerceData));
     setChips(getGuidedReplyChips(commerceData.chips));
     setStatus("Related guided options loaded.");
   }
@@ -3166,6 +3246,7 @@ export function KaprukaGenieApp() {
     ];
 
     setMessages(nextMessages);
+    playChatSound("send");
     setInput("");
     setIsSending(true);
     setActivityMessage(text.processing);
@@ -3193,10 +3274,7 @@ export function KaprukaGenieApp() {
             true,
             nextExtendedPreferences,
           );
-          setMessages((current) => [
-            ...current,
-            { role: "assistant", content: getCommerceReply(commerceData) },
-          ]);
+          appendAssistantMessage(getCommerceReply(commerceData));
         }
       } else if (conversationStage === "collecting-context") {
         setConversationStage("ready");
@@ -3505,6 +3583,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     const formData = new FormData();
     formData.append("image", file);
     setActivityMessage(text.uploadingImage);
@@ -3549,6 +3628,7 @@ export function KaprukaGenieApp() {
     }
 
     try {
+      setIsComposerMenuOpen(false);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
@@ -3620,6 +3700,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     shouldSendRecordingRef.current = false;
     mediaRecorderRef.current.stop();
   }
@@ -3629,6 +3710,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     shouldSendRecordingRef.current = true;
     setIsVoiceProcessing(true);
     setActivityMessage(text.transcribingVoice);
@@ -4487,7 +4569,7 @@ export function KaprukaGenieApp() {
           <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#e8e2f2] bg-[linear-gradient(180deg,#fff_0%,#fbf9ff_100%)] shadow-[0_12px_32px_rgba(44,22,75,0.07)]">
             <div className="flex items-center justify-between border-b border-[#e8e2f2] p-5 font-black">
               <span>{activeMode}</span>
-              <div className="flex items-center gap-3 [&>span.text-sm]:hidden">
+              <div className="ml-auto flex items-center justify-end gap-1.5 md:gap-3 [&>span.text-sm]:hidden">
                 <span className="sr-only">{text.language}</span>
                 <label className="sr-only" htmlFor="chat-language">
                   {text.language}
@@ -4498,7 +4580,7 @@ export function KaprukaGenieApp() {
                   onChange={(event) =>
                     handleLanguageChange(event.target.value as Language)
                   }
-                  className="h-10 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d] outline-none"
+                  className="h-10 w-[92px] rounded-[12px] border border-[#e8e2f2] bg-white px-2 text-sm font-black text-[#3f246d] outline-none md:w-auto md:px-3"
                 >
                   {languageOptions.map((option) => (
                     <option key={option} value={option}>
@@ -4509,14 +4591,22 @@ export function KaprukaGenieApp() {
                 <button
                   type="button"
                   onClick={() => void handleClearHistory()}
-                  className="flex h-10 items-center gap-2 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d]"
+                  className="grid h-9 w-9 place-items-center rounded-[12px] border border-[#e8e2f2] bg-white text-sm font-black text-[#3f246d] md:flex md:h-10 md:w-auto md:items-center md:gap-2 md:px-3"
                   title={text.clearHistory}
+                  aria-label={text.clearHistory}
                 >
                   <Icon name="trash" className="h-4 w-4" />
-                  <span>{text.clearHistory}</span>
+                  <span className="hidden md:inline">{text.clearHistory}</span>
                 </button>
-                <span className="flex items-center gap-1 text-[14px] text-[#18a058]">
-                  <Icon name="check" className="h-4 w-4" /> {text.active}
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-[12px] text-[#18a058] md:h-auto md:w-auto md:gap-1 md:rounded-none md:text-[14px]"
+                  title={text.active}
+                  aria-label={text.active}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#18a058] md:hidden" />
+                  <span className="hidden items-center gap-1 md:flex">
+                    <Icon name="check" className="h-4 w-4" /> {text.active}
+                  </span>
                 </span>
               </div>
             </div>
@@ -4759,53 +4849,101 @@ export function KaprukaGenieApp() {
             {!isFormToolMode ? (
               <form
                 onSubmit={(event) => void handleSubmit(event)}
-                className="flex flex-wrap gap-2 border-t border-[#e8e2f2] bg-white p-4"
+                className="relative border-t border-[#e8e2f2] bg-white p-4"
               >
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(event) => void handleImageChange(event)}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isRecording) {
-                    void startRecording();
-                  }
-                }}
-                disabled={isVoiceProcessing}
-                className={`grid h-12 w-12 place-items-center rounded-[15px] border text-[0px] ${
-                  isRecording
-                    ? "border-[#3f246d] bg-[#3f246d] text-white"
-                    : "border-[#e8e2f2] bg-white"
-                } disabled:opacity-40`}
-                title={text.voiceEnglishOnly}
-              >
-                <Icon name="mic" />
-              </button>
-              <button
-                type="button"
-                onClick={() => imageInputRef.current?.click()}
-                className="grid h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white text-[0px]"
-                title="Upload image"
-              >
-                <Icon name="camera" />
-              </button>
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={text.askPlaceholder}
-                className="h-12 min-w-0 flex-1 basis-full rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79] md:basis-auto"
-              />
-                <button
-                  type="submit"
-                  disabled={isSending || input.trim().length === 0}
-                  className="h-12 rounded-[15px] bg-[#ffdf00] px-6 text-sm font-black text-[#1a0f2e] disabled:opacity-50"
-                >
-                  {isSending ? text.sending : text.send}
-                </button>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => void handleImageChange(event)}
+                  className="hidden"
+                />
+                {isComposerMenuOpen ? (
+                  <div className="absolute bottom-[calc(100%+10px)] left-4 z-20 flex flex-col gap-2 rounded-[16px] border border-[#e8e2f2] bg-white p-2 shadow-[0_16px_40px_rgba(44,22,75,0.16)] md:hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isRecording) {
+                          void startRecording();
+                        }
+                      }}
+                      disabled={isVoiceProcessing}
+                      className={`flex h-11 items-center gap-2 rounded-[12px] px-3 text-sm font-black ${
+                        isRecording
+                          ? "bg-[#3f246d] text-white"
+                          : "bg-[#f6f4fb] text-[#3f246d]"
+                      } disabled:opacity-40`}
+                    >
+                      <Icon name="mic" className="h-4 w-4" />
+                      <span>Voice</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="flex h-11 items-center gap-2 rounded-[12px] bg-[#f6f4fb] px-3 text-sm font-black text-[#3f246d]"
+                    >
+                      <Icon name="camera" className="h-4 w-4" />
+                      <span>Image</span>
+                    </button>
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsComposerMenuOpen((current) => !current)}
+                    className="grid h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white md:hidden"
+                    aria-label="Open upload options"
+                  >
+                    <Icon name={isComposerMenuOpen ? "x" : "plus"} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isRecording) {
+                        void startRecording();
+                      }
+                    }}
+                    disabled={isVoiceProcessing}
+                    className={`hidden h-12 w-12 place-items-center rounded-[15px] border text-[0px] md:grid ${
+                      isRecording
+                        ? "border-[#3f246d] bg-[#3f246d] text-white"
+                        : "border-[#e8e2f2] bg-white"
+                    } disabled:opacity-40`}
+                    title={text.voiceEnglishOnly}
+                  >
+                    <Icon name="mic" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="hidden h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white text-[0px] md:grid"
+                    title="Upload image"
+                  >
+                    <Icon name="camera" />
+                  </button>
+                  <input
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onFocus={() => setIsComposerMenuOpen(false)}
+                    placeholder={text.askPlaceholder}
+                    className="h-12 min-w-0 flex-1 rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSending || input.trim().length === 0}
+                    className="grid h-12 w-12 place-items-center rounded-[15px] bg-[#ffdf00] text-[#1a0f2e] disabled:opacity-50 md:hidden"
+                    aria-label={isSending ? text.sending : text.send}
+                  >
+                    <Icon name="send" />
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSending || input.trim().length === 0}
+                    className="hidden h-12 rounded-[15px] bg-[#ffdf00] px-6 text-sm font-black text-[#1a0f2e] disabled:opacity-50 md:block"
+                  >
+                    {isSending ? text.sending : text.send}
+                  </button>
+                </div>
               </form>
             ) : null}
           </section>
