@@ -51,6 +51,7 @@ type CommerceResponse = {
   chips?: string[];
   detectedLanguage?: Language;
   eventPlan?: string[];
+  extendedPreferences?: ExtendedPreferences;
   giftMessage?: string;
   preferences?: {
     budget: string;
@@ -149,6 +150,13 @@ type ShoppingProfile = {
   recipient: string;
 };
 
+type ExtendedPreferences = {
+  budget: string;
+  giftType: string;
+  occasion: string;
+  recipient: string;
+};
+
 type ContextAnalysisResponse = {
   budget?: string | null;
   category?: string | null;
@@ -163,6 +171,7 @@ type StoredChatState = {
   chips: string[];
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
+  extendedPreferences?: ExtendedPreferences;
   input: string;
   language: Language;
   messages: ChatMessage[];
@@ -176,6 +185,7 @@ type ModeSession = {
   chips: string[];
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
+  extendedPreferences?: ExtendedPreferences;
   input: string;
   messages: ChatMessage[];
   pendingUserRequest: string;
@@ -542,6 +552,17 @@ const initialShoppingProfile: ShoppingProfile = {
   recipient: "",
 };
 
+function getExtendedPreferencesFromProfile(
+  profile: ShoppingProfile,
+): ExtendedPreferences {
+  return {
+    budget: profile.budget,
+    giftType: profile.category,
+    occasion: profile.occasion,
+    recipient: profile.recipient,
+  };
+}
+
 function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile {
   return {
     ...initialShoppingProfile,
@@ -551,9 +572,13 @@ function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile
 }
 
 function normalizeModeSession(session: ModeSession): ModeSession {
+  const normalizedProfile = normalizeShoppingProfile(session.profile);
   return {
     ...session,
-    profile: normalizeShoppingProfile(session.profile),
+    extendedPreferences:
+      session.extendedPreferences ??
+      getExtendedPreferencesFromProfile(normalizedProfile),
+    profile: normalizedProfile,
   };
 }
 
@@ -1181,6 +1206,10 @@ export function KaprukaGenieApp() {
   });
   const [profile, setProfile] =
     useState<ShoppingProfile>(initialShoppingProfile);
+  const [extendedPreferences, setExtendedPreferences] =
+    useState<ExtendedPreferences>(() =>
+      getExtendedPreferencesFromProfile(initialShoppingProfile),
+    );
   const [conversationStage, setConversationStage] = useState<
     "first-message" | "collecting-context" | "ready"
   >("first-message");
@@ -1340,6 +1369,9 @@ export function KaprukaGenieApp() {
         chips: starterChips,
         contextDraft: emptyContextDraft,
         conversationStage: "first-message",
+        extendedPreferences: getExtendedPreferencesFromProfile(
+          initialShoppingProfile,
+        ),
         input: "",
         messages: starterMessagesByLanguage[language],
         pendingUserRequest: "",
@@ -1353,6 +1385,7 @@ export function KaprukaGenieApp() {
       chips: [],
       contextDraft: emptyContextDraft,
       conversationStage: needsContext ? "collecting-context" : "ready",
+      extendedPreferences: getExtendedPreferencesFromProfile(profile),
       input: "",
       messages: [
         {
@@ -1375,6 +1408,7 @@ export function KaprukaGenieApp() {
       chips,
       contextDraft,
       conversationStage,
+      extendedPreferences,
       input,
       messages,
       pendingUserRequest,
@@ -1388,6 +1422,10 @@ export function KaprukaGenieApp() {
     setChips(normalizedSession.chips);
     setContextDraft(normalizedSession.contextDraft);
     setConversationStage(normalizedSession.conversationStage);
+    setExtendedPreferences(
+      normalizedSession.extendedPreferences ??
+        getExtendedPreferencesFromProfile(normalizedSession.profile),
+    );
     setInput(normalizedSession.input);
     setMessages(normalizedSession.messages);
     setPendingUserRequest(normalizedSession.pendingUserRequest);
@@ -2167,6 +2205,9 @@ export function KaprukaGenieApp() {
               chips: storedState.chips,
               contextDraft: storedState.contextDraft,
               conversationStage: storedState.conversationStage,
+              extendedPreferences:
+                storedState.extendedPreferences ??
+                getExtendedPreferencesFromProfile(storedState.profile),
               input: storedState.input,
               messages: storedState.messages,
               pendingUserRequest: storedState.pendingUserRequest,
@@ -2215,6 +2256,7 @@ export function KaprukaGenieApp() {
       chips,
       contextDraft,
       conversationStage,
+      extendedPreferences,
       input,
       language,
       messages,
@@ -2224,6 +2266,7 @@ export function KaprukaGenieApp() {
           chips,
           contextDraft,
           conversationStage,
+          extendedPreferences,
           input,
           messages,
           pendingUserRequest,
@@ -2238,6 +2281,7 @@ export function KaprukaGenieApp() {
     chips,
     contextDraft,
     conversationStage,
+    extendedPreferences,
     input,
     isChatStateLoaded,
     language,
@@ -2384,6 +2428,18 @@ export function KaprukaGenieApp() {
     setMessages((current) => [...current, message]);
   }
 
+  function updateSelectedPreference(
+    field: "budget" | "category" | "occasion" | "recipient",
+    value: string,
+  ) {
+    setProfile((current) => ({ ...current, [field]: value }));
+    const extendedField = field === "category" ? "giftType" : field;
+    setExtendedPreferences((current) => ({
+      ...current,
+      [extendedField]: value,
+    }));
+  }
+
   function addToBuyBox(product: Product) {
     setBuyBox((current) =>
       current.some((item) => item.id === product.id)
@@ -2443,6 +2499,10 @@ export function KaprukaGenieApp() {
       setGiftMessage(data.giftMessage);
     }
 
+    if (data.extendedPreferences) {
+      setExtendedPreferences(data.extendedPreferences);
+    }
+
     if (applyPreferenceUpdates && data.preferences) {
       const nextPreferences = data.preferences;
 
@@ -2464,6 +2524,7 @@ export function KaprukaGenieApp() {
     applyPreferenceUpdates = true,
     userMessage = query,
     preserveProfile = false,
+    extendedPreferencesOverride = extendedPreferences,
   ) {
     const requestProfile = normalizeShoppingProfile(profileOverride);
     const controller = new AbortController();
@@ -2477,6 +2538,7 @@ export function KaprukaGenieApp() {
         )
         .slice(-3)
         .map(({ content, role }) => ({ content, role })),
+      extendedPreferences: extendedPreferencesOverride,
       language,
       mode,
       profile: requestProfile,
@@ -2705,6 +2767,7 @@ export function KaprukaGenieApp() {
       true,
       request,
       true,
+      getExtendedPreferencesFromProfile(requestProfile),
     );
 
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
@@ -2811,6 +2874,7 @@ export function KaprukaGenieApp() {
     ];
 
     setProfile(nextProfile);
+    setExtendedPreferences(getExtendedPreferencesFromProfile(nextProfile));
     setMessages(nextMessages);
     setIsSending(true);
     setActivityMessage(text.processing);
@@ -3070,7 +3134,12 @@ export function KaprukaGenieApp() {
     try {
       if (starterGiftType) {
         const nextProfile = { ...profile, category: starterGiftType };
+        const nextExtendedPreferences = {
+          ...extendedPreferences,
+          giftType: starterGiftType,
+        };
         setProfile(nextProfile);
+        setExtendedPreferences(nextExtendedPreferences);
         setPendingUserRequest(content);
 
         if (conversationStage === "first-message") {
@@ -3083,6 +3152,7 @@ export function KaprukaGenieApp() {
             false,
             content,
             true,
+            nextExtendedPreferences,
           );
           setMessages((current) => [
             ...current,
@@ -4308,10 +4378,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.budget}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        budget: event.target.value,
-                      }))
+                      updateSelectedPreference("budget", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -4328,10 +4395,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.recipient}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        recipient: event.target.value,
-                      }))
+                      updateSelectedPreference("recipient", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -4348,10 +4412,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.occasion}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        occasion: event.target.value,
-                      }))
+                      updateSelectedPreference("occasion", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -4368,10 +4429,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.category}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        category: event.target.value,
-                      }))
+                      updateSelectedPreference("category", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >

@@ -53,8 +53,23 @@ type PreferenceSnapshot = {
   requestedGiftType: string | null;
 };
 
+type ExtendedPreferences = {
+  budget: string;
+  giftType: string;
+  occasion: string;
+  recipient: string;
+};
+
+type ExtendedPreferenceUpdates = {
+  budget: string | null;
+  giftType: string | null;
+  occasion: string | null;
+  recipient: string | null;
+};
+
 type MessageAnalysis = {
   detectedLanguage: DetectedLanguage;
+  extendedPreferences: ExtendedPreferenceUpdates;
   intent: MessageIntent;
   preferences: PreferenceSnapshot;
   searchQuery: string | null;
@@ -501,6 +516,17 @@ function parseBudgetFilter(...values: Array<string | undefined>): BudgetFilter {
     .filter((amount): amount is number => amount !== null && amount > 0);
 
   if (
+    numbers.length >= 2 &&
+    (/\b(between|from|range)\b/.test(normalized) ||
+      /\d\s*-\s*\d/.test(normalized))
+  ) {
+    return {
+      max_price: Math.max(numbers[0], numbers[1]),
+      min_price: Math.min(numbers[0], numbers[1]),
+    };
+  }
+
+  if (
     /\b(between|from|range)\b/.test(normalized) &&
     numbers.length >= 2
   ) {
@@ -676,25 +702,62 @@ function isProductInsideBudget(product: Product, filter: BudgetFilter) {
   return true;
 }
 
-function getActiveBudgetFilter(
+function cleanExtendedPreference(value: string | null) {
+  return value
+    ?.replace(/[\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120) || "";
+}
+
+function parseExtendedPreferences(
+  value: unknown,
   profile: ShoppingProfile,
-  latestUserMessage: string,
-  conversationHistory: ChatMessage[],
-) {
-  const currentFilter = parseBudgetFilter(latestUserMessage, profile.budget);
-  if (hasBudgetFilter(currentFilter)) {
-    return currentFilter;
-  }
+): ExtendedPreferences {
+  const record = asRecord(value);
+  return {
+    budget:
+      cleanExtendedPreference(getString(record, "budget")) ||
+      profile.budget ||
+      "",
+    giftType:
+      cleanExtendedPreference(getString(record, "giftType")) ||
+      profile.category ||
+      "",
+    occasion:
+      cleanExtendedPreference(getString(record, "occasion")) ||
+      profile.occasion ||
+      "",
+    recipient:
+      cleanExtendedPreference(getString(record, "recipient")) ||
+      profile.recipient ||
+      "",
+  };
+}
 
-  for (const message of [...conversationHistory].reverse()) {
-    if (message.role !== "user") continue;
-    const historicalFilter = parseBudgetFilter(message.content);
-    if (hasBudgetFilter(historicalFilter)) {
-      return historicalFilter;
-    }
-  }
+function mergeExtendedPreferences(
+  current: ExtendedPreferences,
+  updates: ExtendedPreferenceUpdates,
+): ExtendedPreferences {
+  return {
+    budget: cleanExtendedPreference(updates.budget) || current.budget,
+    giftType: cleanExtendedPreference(updates.giftType) || current.giftType,
+    occasion: cleanExtendedPreference(updates.occasion) || current.occasion,
+    recipient: cleanExtendedPreference(updates.recipient) || current.recipient,
+  };
+}
 
-  return parseBudgetFilter(profile.budget);
+function getExtendedSearchProfile(
+  profile: ShoppingProfile,
+  preferences: ExtendedPreferences,
+): ShoppingProfile {
+  return {
+    ...profile,
+    budget: preferences.budget || undefined,
+    category: preferences.giftType || undefined,
+    occasion: preferences.occasion || undefined,
+    recipient: preferences.recipient || undefined,
+  };
 }
 
 function getPreferenceSearchTerms(query: string, profile: ShoppingProfile) {
@@ -724,7 +787,10 @@ function getPreferenceRelevanceTerms(
   }
 
   if (category !== "other") {
-    return [category];
+    return category
+      .split(/[^a-z0-9]+/)
+      .map((term) => (term.endsWith("s") ? term.slice(0, -1) : term))
+      .filter((term) => term.length >= 3);
   }
 
   return query
@@ -763,7 +829,12 @@ function isProductRelevantToPreferences(
     .join(" ")
     .toLowerCase();
 
-  return relevanceTerms.some((term) => productText.includes(term));
+  const isKnownCategory = Boolean(categoryRelevanceTerms[
+    profile.category?.trim().toLowerCase() ?? ""
+  ]);
+  return isKnownCategory
+    ? relevanceTerms.some((term) => productText.includes(term))
+    : relevanceTerms.every((term) => productText.includes(term));
 }
 
 function getSearchQuery(query: string, profile: ShoppingProfile, mode: string) {
@@ -980,6 +1051,7 @@ function parseMessageAnalysis(
       .replace(/\s+/g, " ")
       .slice(0, 80);
     const rawPreferences = asRecord(parsed?.preferences);
+    const rawExtendedPreferences = asRecord(parsed?.extendedPreferences);
     const requestedGiftType =
       getString(rawPreferences, "requestedGiftType")
         ?.replace(/[\r\n]+/g, " ")
@@ -989,6 +1061,23 @@ function parseMessageAnalysis(
 
     return {
       detectedLanguage: fallbackLanguage,
+      extendedPreferences: {
+        budget:
+          cleanExtendedPreference(getString(rawExtendedPreferences, "budget")) ||
+          null,
+        giftType:
+          cleanExtendedPreference(
+            getString(rawExtendedPreferences, "giftType"),
+          ) || null,
+        occasion:
+          cleanExtendedPreference(
+            getString(rawExtendedPreferences, "occasion"),
+          ) || null,
+        recipient:
+          cleanExtendedPreference(
+            getString(rawExtendedPreferences, "recipient"),
+          ) || null,
+      },
       intent,
       preferences: {
         budget: getNormalizedPreference(
@@ -1033,7 +1122,7 @@ async function getGroqMessageAnalysis(
         {
           role: "system",
           content:
-            "Analyze the user's Kapruka shopping request without detecting or inferring its language; selectedLanguage is authoritative and must remain unchanged. Singlish means Sinhala meaning written informally with Latin letters, not English; understand spelling variations and common words such as mata, oyata, ona, hoyanna, denna, puluwanda, keeyada, and adu as natural Sinhala. Do not inherit preferences from earlier messages. Classify the request as question, command, or conversation. Extract budget, recipient, occasion, and gift type only when explicitly present in the current request; otherwise return null for that preference, and never use Other as a default. Normalize only the four exact preset budget ranges to their matching option. Return budget Other only for an explicitly requested non-preset numeric budget; the original message retains its exact amount for catalog filtering. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. If the user requests any different specific gift or product type, set category to Other and preserve its short English name in requestedGiftType. Extract that exact requested type as a short English catalog searchQuery, translating when needed. Never use Other as searchQuery. Return JSON only and do not answer the user.",
+            "Analyze only the latest user request; selectedLanguage is authoritative. Return two preference layers. preferences contains only normalized visible preset changes explicitly stated now. extendedPreferences contains the exact, specific English search meaning explicitly stated now for budget, recipient, occasion, and giftType; return null for every field not changed in the latest request. Preserve useful specificity: if the selected type is Cakes and the user now asks for chocolate cakes, extendedPreferences.giftType must be 'chocolate cakes' while preferences.category may remain Cakes. Translate Sinhala or Singlish preference meaning into concise English search text. Never copy older preferences from recentConversation into an update. Classify intent as question, command, or conversation. Normalize visible budgets and categories only to the supplied preset options. Return JSON only and do not answer the user.",
         },
         {
           role: "user",
@@ -1050,6 +1139,12 @@ async function getGroqMessageAnalysis(
                 recipient: "Male | Female | Child | Couple | Other | null",
                 requestedGiftType:
                   "specific English gift type from this message, or null",
+              },
+              extendedPreferences: {
+                budget: "exact budget or price range from this message, or null",
+                giftType: "specific English gift type from this message, or null",
+                occasion: "specific English occasion from this message, or null",
+                recipient: "specific English recipient from this message, or null",
               },
               searchQuery: "2-5 English catalog words, or empty string",
             },
@@ -1911,6 +2006,10 @@ export async function POST(request: Request) {
     bodyRecord?.conversationHistory,
   );
   const profile = parseProfile(bodyRecord?.profile);
+  const submittedExtendedPreferences = parseExtendedPreferences(
+    bodyRecord?.extendedPreferences,
+    profile,
+  );
   const checkout = parseCheckoutDetails(bodyRecord?.checkout);
   const giftMessagePreferences = parseGiftMessagePreferences(
     bodyRecord?.giftMessagePreferences,
@@ -2086,6 +2185,12 @@ export async function POST(request: Request) {
         }
       : {
           detectedLanguage: language,
+          extendedPreferences: {
+            budget: null,
+            giftType: null,
+            occasion: null,
+            recipient: null,
+          },
           intent: inferMessageIntent(query),
           preferences: {
             budget: locallyDetectedBudget,
@@ -2099,21 +2204,28 @@ export async function POST(request: Request) {
     const effectiveProfile = preserveProfile
       ? profile
       : getFreshProfile(profile, resolvedMessageAnalysis.preferences);
-    const activeBudgetFilter = getActiveBudgetFilter(
+    const effectiveExtendedPreferences = mergeExtendedPreferences(
+      submittedExtendedPreferences,
+      resolvedMessageAnalysis.extendedPreferences,
+    );
+    const searchProfile = getExtendedSearchProfile(
       effectiveProfile,
-      userMessage,
-      conversationHistory,
+      effectiveExtendedPreferences,
+    );
+    const activeBudgetFilter = parseBudgetFilter(
+      effectiveExtendedPreferences.budget,
     );
     const searchQuery =
       productIdsForCompare.length >= 2
         ? productIdsForCompare.join(" ")
-        : messageAnalysis
-          ? normalizeAnalyzedSearchQuery(
-              resolvedMessageAnalysis.searchQuery ||
-                resolvedMessageAnalysis.preferences.requestedGiftType,
-              effectiveProfile,
-            )
-          : getSearchQuery(query, effectiveProfile, mode);
+        : effectiveExtendedPreferences.giftType ||
+          (messageAnalysis
+            ? normalizeAnalyzedSearchQuery(
+                resolvedMessageAnalysis.searchQuery ||
+                  resolvedMessageAnalysis.preferences.requestedGiftType,
+                searchProfile,
+              )
+            : getSearchQuery(query, searchProfile, mode));
     const deliveryRequested = isDeliveryRequested(userMessage);
     const canonicalCityPromise =
       deliveryRequested && effectiveProfile.city
@@ -2128,7 +2240,7 @@ export async function POST(request: Request) {
         : searchKaprukaProducts(
             mcp,
             searchQuery,
-            effectiveProfile,
+            searchProfile,
             hasBudgetFilter(activeBudgetFilter)
               ? `${query} ${formatBudgetFilter(activeBudgetFilter)}`
               : query,
@@ -2271,7 +2383,7 @@ export async function POST(request: Request) {
       query,
       products,
       delivery,
-      effectiveProfile,
+      searchProfile,
       resolvedMessageAnalysis,
       searchQuery,
       productSearch,
@@ -2317,6 +2429,7 @@ export async function POST(request: Request) {
         ],
       },
       products: responseProducts,
+      extendedPreferences: effectiveExtendedPreferences,
       preferences: getClientPreferences(effectiveProfile),
       recommendations,
       reply: commerce.reply,
