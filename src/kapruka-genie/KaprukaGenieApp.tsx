@@ -563,6 +563,34 @@ function getExtendedPreferencesFromProfile(
   };
 }
 
+function mergeExtendedPreferencesWithProfile(
+  current: ExtendedPreferences,
+  profileUpdates: Partial<
+    Pick<ShoppingProfile, "budget" | "category" | "occasion" | "recipient">
+  >,
+  extendedUpdates?: Partial<ExtendedPreferences>,
+): ExtendedPreferences {
+  return {
+    budget:
+      extendedUpdates?.budget ?? profileUpdates.budget ?? current.budget ?? "",
+    giftType:
+      extendedUpdates?.giftType ??
+      profileUpdates.category ??
+      current.giftType ??
+      "",
+    occasion:
+      extendedUpdates?.occasion ??
+      profileUpdates.occasion ??
+      current.occasion ??
+      "",
+    recipient:
+      extendedUpdates?.recipient ??
+      profileUpdates.recipient ??
+      current.recipient ??
+      "",
+  };
+}
+
 function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile {
   return {
     ...initialShoppingProfile,
@@ -2499,19 +2527,30 @@ export function KaprukaGenieApp() {
       setGiftMessage(data.giftMessage);
     }
 
-    if (data.extendedPreferences) {
-      setExtendedPreferences(data.extendedPreferences);
-    }
-
     if (applyPreferenceUpdates && data.preferences) {
       const nextPreferences = data.preferences;
-
-      setProfile((current) => ({
-        ...current,
+      const profileUpdates = {
         budget: nextPreferences.budget,
         category: nextPreferences.category,
         occasion: nextPreferences.occasion,
         recipient: nextPreferences.recipient,
+      };
+
+      setProfile((current) => ({
+        ...current,
+        ...profileUpdates,
+      }));
+      setExtendedPreferences((current) =>
+        mergeExtendedPreferencesWithProfile(
+          current,
+          profileUpdates,
+          data.extendedPreferences,
+        ),
+      );
+    } else if (data.extendedPreferences) {
+      setExtendedPreferences((current) => ({
+        ...current,
+        ...data.extendedPreferences,
       }));
     }
 

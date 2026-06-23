@@ -738,12 +738,27 @@ function parseExtendedPreferences(
 function mergeExtendedPreferences(
   current: ExtendedPreferences,
   updates: ExtendedPreferenceUpdates,
+  profileFallback?: PreferenceSnapshot,
 ): ExtendedPreferences {
+  const fallbackGiftType =
+    cleanExtendedPreference(updates.giftType) ||
+    profileFallback?.requestedGiftType ||
+    profileFallback?.category ||
+    "";
+  const fallbackBudget =
+    cleanExtendedPreference(updates.budget) || profileFallback?.budget || "";
+  const fallbackOccasion =
+    cleanExtendedPreference(updates.occasion) || profileFallback?.occasion || "";
+  const fallbackRecipient =
+    cleanExtendedPreference(updates.recipient) ||
+    profileFallback?.recipient ||
+    "";
+
   return {
-    budget: cleanExtendedPreference(updates.budget) || current.budget,
-    giftType: cleanExtendedPreference(updates.giftType) || current.giftType,
-    occasion: cleanExtendedPreference(updates.occasion) || current.occasion,
-    recipient: cleanExtendedPreference(updates.recipient) || current.recipient,
+    budget: fallbackBudget || current.budget,
+    giftType: fallbackGiftType || current.giftType,
+    occasion: fallbackOccasion || current.occasion,
+    recipient: fallbackRecipient || current.recipient,
   };
 }
 
@@ -1690,6 +1705,7 @@ async function getGroqCommerce(
   mode: string,
   task: string,
   query: string,
+  userMessage: string,
   products: Product[],
   delivery: KaprukaDeliveryResponse | null,
   profile: ShoppingProfile,
@@ -1716,7 +1732,7 @@ async function getGroqCommerce(
               messageIntent: messageAnalysis.intent,
               mode,
               profile,
-              query,
+              query: userMessage,
               replyLanguage: language,
               searchContext: {
                 budgetResult: productSearch
@@ -1770,7 +1786,7 @@ async function getGroqCommerce(
               messageAnalysis.preferences.requestedGiftType,
             productCatalogFromKaprukaMcp: products,
             profile,
-            query,
+            query: userMessage,
             replyLanguage: language,
             searchContext: {
               budgetResult: productSearch
@@ -2207,6 +2223,7 @@ export async function POST(request: Request) {
     const effectiveExtendedPreferences = mergeExtendedPreferences(
       submittedExtendedPreferences,
       resolvedMessageAnalysis.extendedPreferences,
+      resolvedMessageAnalysis.preferences,
     );
     const searchProfile = getExtendedSearchProfile(
       effectiveProfile,
@@ -2381,6 +2398,7 @@ export async function POST(request: Request) {
       mode,
       task,
       query,
+      userMessage,
       products,
       delivery,
       searchProfile,
