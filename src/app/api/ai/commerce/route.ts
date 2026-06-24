@@ -228,7 +228,7 @@ const fallbackResponse: CommerceResponse = {
   giftMessage: "",
   mode: "Smart Shopping",
   recommendations: [],
-  reply: "I checked the catalog.",
+  reply: "",
   tracking: "",
 };
 
@@ -1357,9 +1357,7 @@ function parseCommerceResponse(
       giftMessage: getString(parsed, "giftMessage") ?? "",
       mode: getString(parsed, "mode") ?? mode,
       recommendations: parseRecommendations(parsed?.recommendations, products),
-      reply:
-        stripModelThinking(getString(parsed, "reply") ?? "") ||
-        fallbackResponse.reply,
+      reply: stripModelThinking(getString(parsed, "reply") ?? ""),
       tracking: getString(parsed, "tracking") ?? "",
     };
   } catch {
@@ -1370,22 +1368,6 @@ function parseCommerceResponse(
       reply: stripModelThinking(text),
     };
   }
-}
-
-function getNoProductListFallback(language: DetectedLanguage) {
-  if (language === "Sinhala") {
-    return "ඔබේ ඉල්ලීමට ගැළපෙන options product cards ලෙස පෙන්වා ඇත.";
-  }
-
-  if (language === "Singlish") {
-    return "Oyage illimata galapena options product cards walin pennanawa.";
-  }
-
-  if (language === "Tanglish") {
-    return "Unga request ku match aagara options product cards la kaattappadudhu.";
-  }
-
-  return "Matching options are shown in the product cards.";
 }
 
 function getReplyLanguageInstruction(language: DetectedLanguage) {
@@ -1449,10 +1431,7 @@ function getLanguageSafeReply(
   language: DetectedLanguage,
   ...candidates: Array<string | null>
 ) {
-  return (
-    candidates.find((reply) => isReplyInSelectedLanguage(reply, language)) ??
-    getNoProductListFallback(language)
-  );
+  return candidates.find((reply) => isReplyInSelectedLanguage(reply, language)) ?? "";
 }
 
 function sanitizeChatReply(
@@ -1479,7 +1458,61 @@ function sanitizeChatReply(
     .filter((sentence) => !isProductSpecific(sentence));
   const sanitized = safeSentences.join(" ").replace(/\s+/g, " ").trim();
 
-  return sanitized || getNoProductListFallback(language);
+  return sanitized;
+}
+
+function isNoMatchStyleReply(reply: string) {
+  return /no exact match|no exact matches|could not find|couldn't find|did not find|within your budget|adjust your budget|adjust your preferences/i.test(
+    reply,
+  );
+}
+
+async function getAiProductReply(
+  apiKey: string,
+  language: DetectedLanguage,
+  userMessage: string,
+  profile: ShoppingProfile,
+  conversationHistory: ChatMessage[],
+  products: Product[],
+) {
+  const { response } = await fetchGroqChatWithFallback(apiKey, {
+    model:
+      language === "Sinhala"
+        ? process.env.GROQ_SINHALA_CHAT_MODEL ?? DEFAULT_SINHALA_CHAT_MODEL
+        : language === "Singlish"
+          ? process.env.GROQ_SINGLISH_CHAT_MODEL ?? DEFAULT_SINGLISH_CHAT_MODEL
+          : process.env.GROQ_ENGLISH_CHAT_MODEL ?? DEFAULT_ENGLISH_CHAT_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: `You are the shopping reply voice for Kapruka Genie. Product cards already exist and match the user's request, so reply positively about the request using activePreferences as the source of truth. Never say that no products were found, never ask the user to change budget or preferences, and never mention product names, product IDs, prices, counts, lists, or bullet points because the UI already shows the product cards. Reply naturally to the user's message in one short paragraph. ${getReplyLanguageInstruction(language)}`,
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          activePreferences: {
+            budget: profile.budget,
+            category: profile.category,
+            occasion: profile.occasion,
+            recipient: profile.recipient,
+          },
+          exactCatalogMatchCount: products.length,
+          query: userMessage,
+          recentConversation: conversationHistory,
+        }),
+      },
+    ],
+    temperature: 0.2,
+    max_completion_tokens: 120,
+  });
+
+  if (!response.ok) {
+    return "";
+  }
+
+  return stripModelThinking(
+    getAssistantContent((await response.json()) as unknown) ?? "",
+  ).trim();
 }
 
 function fallbackRecommendations(products: Product[]) {
@@ -1941,7 +1974,22 @@ async function getGroqCommerce(
   }
 
   const commerce = parseCommerceResponse(content, mode, products);
-  const reply = getLanguageSafeReply(language, directReply, commerce.reply);
+  const initialReply = getLanguageSafeReply(language, directReply, commerce.reply);
+  const needsPositiveProductReply =
+    products.length > 0 && isNoMatchStyleReply(initialReply);
+  const aiPositiveReply = needsPositiveProductReply
+    ? await getAiProductReply(
+        apiKey,
+        language,
+        userMessage,
+        profile,
+        conversationHistory,
+        products,
+      )
+    : "";
+  const reply = needsPositiveProductReply
+    ? getLanguageSafeReply(language, aiPositiveReply, initialReply)
+    : initialReply;
 
   return {
     ...commerce,

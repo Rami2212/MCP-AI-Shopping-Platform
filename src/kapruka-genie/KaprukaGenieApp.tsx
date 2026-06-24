@@ -1263,6 +1263,7 @@ const dynamicChipLabels: Record<Language, Record<string, string>> = {
 const commonChipLabels: Record<Language, Record<string, string>> = {
   English: {
     "Next item": "Next item",
+    "Previous item": "Previous item",
     "Suggest more": "Suggest more",
   },
   Sinhala: {
@@ -1274,6 +1275,7 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "More like this": "මේ වගේ තවත්",
     "Next item": "ඊළඟ අයිතමය",
     "Open checkout": "Checkout අරින්න",
+    "Previous item": "පෙර අයිතමය",
     Perfume: "සුවඳ විලවුන්",
     Roses: "රෝස මල්",
     "Search more products": "තව products හොයන්න",
@@ -1292,6 +1294,7 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "More like this": "Me wage thawa",
     "Next item": "Ilanga item eka",
     "Open checkout": "Open checkout",
+    "Previous item": "Kalin item eka",
     Perfume: "Perfume",
     Roses: "Roses",
     "Search more products": "Thawa products hoyanna",
@@ -1310,6 +1313,7 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "More like this": "Idhu maadhiri innum",
     "Next item": "Next item",
     "Open checkout": "Open checkout",
+    "Previous item": "Previous item",
     Perfume: "Perfume",
     Roses: "Roses",
     "Search more products": "Innum products thedunga",
@@ -1613,6 +1617,8 @@ export function KaprukaGenieApp() {
   const isCompareMode = activeMode.includes("Compare");
   const isTrackingMode = activeMode.includes("Tracking");
   const isGiftMessageMode = activeMode.includes("Message");
+  const isGuidedMode =
+    activeMode.includes("Event") || activeMode.includes("Gift Box");
   const isFormToolMode = isCompareMode || isTrackingMode || isGiftMessageMode;
 
   function closeIntroPanel() {
@@ -1633,7 +1639,7 @@ export function KaprukaGenieApp() {
   }
 
   function getGuidedReplyChips() {
-    return ["Next item", "Suggest more"];
+    return ["Previous item", "Next item", "Suggest more"];
   }
 
   function isRemovedGenericReplyChip(chip: string) {
@@ -1764,51 +1770,7 @@ export function KaprukaGenieApp() {
   }
 
   function getCommerceReply(data: CommerceResponse) {
-    const reply = stripModelThinking(data.reply ?? "").trim();
-    const responseLanguage = language;
-    const hasProducts = Boolean(data.products && data.products.length > 0);
-    const looksLikeNoMatchReply =
-      /no exact match|no exact matches|could not find|couldn't find|did not find|within your budget|adjust your budget|adjust your preferences/i.test(
-        reply,
-      );
-
-    if (reply && !(hasProducts && looksLikeNoMatchReply)) {
-      return reply;
-    }
-
-    if (!hasProducts) {
-      if (responseLanguage === "Sinhala") return "Products හමු වුණේ නැහැ.";
-      if (responseLanguage === "Singlish") return "Products hambune naha.";
-      if (responseLanguage === "Tanglish") return "Products kidaikkala.";
-      return "I could not find matching products.";
-    }
-
-    const replyPreferences = data.preferences ?? {
-      budget: profile.budget,
-      category: profile.category,
-      occasion: profile.occasion,
-      recipient: profile.recipient,
-    };
-    const preferenceParts = [
-      replyPreferences.category,
-      replyPreferences.occasion,
-      replyPreferences.recipient,
-      replyPreferences.budget,
-    ].filter(Boolean);
-    const preferenceSummary = preferenceParts.join(", ");
-
-    if (responseLanguage === "English") {
-      return preferenceSummary
-        ? `I found some options that fit your preferences for ${preferenceSummary}.`
-        : "I found a few options related to your request.";
-    }
-
-    if (responseLanguage === "Sinhala") return "ඔබේ ඉල්ලීමට ගැළපෙන options කිහිපයක් හමු වුණා.";
-    if (responseLanguage === "Singlish") return "Oyage illimata galapena options tikak hambuna.";
-    if (responseLanguage === "Tanglish") {
-      return "Unga request ku match aagara options sila kidaichirukku.";
-    }
-    return "I found a few options related to your request.";
+    return stripModelThinking(data.reply ?? "").trim();
   }
 
   function getRetryableFailureType(error: unknown) {
@@ -2802,6 +2764,10 @@ export function KaprukaGenieApp() {
   }
 
   function appendAssistantMessage(content: string) {
+    if (!content.trim()) {
+      return;
+    }
+
     addMessage({
       role: "assistant",
       content,
@@ -2820,6 +2786,10 @@ export function KaprukaGenieApp() {
     content: string,
     replyPreferences = extendedPreferences,
   ) {
+    if (!content.trim()) {
+      return;
+    }
+
     if (
       replyPreferences.replyCount > 0 &&
       replyPreferences.replyCount <= replyPreferences.lastRepliedCount
@@ -3494,18 +3464,8 @@ export function KaprukaGenieApp() {
     const nextIndex = guidedPlanIndex + 1;
 
     if (nextIndex >= guidedPlanItems.length) {
-      setChips(["Next item", "Suggest more"]);
-      addMessage({
-        role: "assistant",
-        content:
-          language === "Singlish"
-            ? "Checklist eke okkoma item cards pennuwa."
-            : language === "Tanglish"
-              ? "Checklist la irundha ella item cards um kaattitten."
-            : language === "Sinhala"
-              ? "Checklist item cards සියල්ල පෙන්වා අවසන්."
-              : "I have shown the checklist item cards.",
-      });
+      setChips(getGuidedReplyChips());
+      setStatus("All guided item cards are shown.");
       return;
     }
 
@@ -3518,12 +3478,44 @@ export function KaprukaGenieApp() {
       setRecommendedProducts([]);
       setFitReasons({});
       await runCommerce(getPlanSearchTerm(nextItem), activeMode, profile, false);
-      addMessage({
-        role: "assistant",
-        content: getStepReply(nextItem),
-      });
-      setChips(["Next item", "Suggest more"]);
+      setChips(getGuidedReplyChips());
       setStatus("Next guided item loaded.");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
+  async function handlePreviousGuidedItem() {
+    if (isSending || guidedPlanItems.length === 0) {
+      return;
+    }
+
+    const previousIndex = guidedPlanIndex - 1;
+
+    if (previousIndex < 0) {
+      setStatus("You are already at the first guided item.");
+      return;
+    }
+
+    const previousItem = guidedPlanItems[previousIndex];
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    setGuidedPlanIndex(previousIndex);
+
+    try {
+      setRecommendedProducts([]);
+      setFitReasons({});
+      await runCommerce(
+        getPlanSearchTerm(previousItem),
+        activeMode,
+        profile,
+        false,
+      );
+      setChips(getGuidedReplyChips());
+      setStatus("Previous guided item loaded.");
     } catch (error) {
       setStatus(getErrorMessage(error));
     } finally {
@@ -3553,11 +3545,7 @@ export function KaprukaGenieApp() {
         profile,
         false,
       );
-      addMessage({
-        role: "assistant",
-        content: getStepReply(currentItem, true),
-      });
-      setChips(["Next item", "Suggest more"]);
+      setChips(getGuidedReplyChips());
       setStatus("More options loaded.");
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -3622,6 +3610,11 @@ export function KaprukaGenieApp() {
   }
 
   function handleChipClick(chip: string) {
+    if (chip === "Previous item") {
+      void handlePreviousGuidedItem();
+      return;
+    }
+
     if (chip === "Next item") {
       void handleNextGuidedItem();
       return;
@@ -3797,18 +3790,15 @@ export function KaprukaGenieApp() {
       );
       const rows = (data.products ?? []).slice(0, 2).map((product) => ({
         product,
-        suggestion:
-          recommendations.get(product.id) ||
-          data.reply ||
-          "AI suggestion unavailable.",
+        suggestion: recommendations.get(product.id) || data.reply || "",
       }));
 
       setCompareRows(rows);
-      setCompareSuggestion(data.reply ?? "");
+      setCompareSuggestion(data.reply || "");
       setStatus(
         rows.length >= 2
           ? "Product comparison table ready."
-          : (data.reply ?? "Could not match two products for comparison."),
+          : (data.reply || "Product comparison table ready."),
       );
     } catch (error) {
       const message =
@@ -3855,8 +3845,8 @@ export function KaprukaGenieApp() {
         throw new Error(data.error ?? "Order tracking failed.");
       }
 
-      setTrackingResult(data.tracking ?? "No tracking update returned.");
-      setTrackingSuggestion(data.reply ?? "");
+      setTrackingResult(data.tracking || "");
+      setTrackingSuggestion(data.reply || "");
       setStatus("Order tracking result ready.");
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -5011,6 +5001,7 @@ export function KaprukaGenieApp() {
                 type="button"
                 disabled={
                   isSending ||
+                  activeMode !== "Smart Shopping" ||
                   !(
                     profile.budget ||
                     profile.recipient ||
@@ -5019,7 +5010,7 @@ export function KaprukaGenieApp() {
                   )
                 }
                 onClick={() => void handleSidebarPreferenceSubmit()}
-                className="mt-4 h-11 w-full rounded-[14px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-not-allowed disabled:opacity-45"
+                className="mt-4 h-11 w-full rounded-[14px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-not-allowed disabled:bg-[#ece7f5] disabled:text-[#8a8299] disabled:opacity-100"
               >
                 {isSending ? text.sendingContext : text.sendContext}
               </button>
@@ -5154,18 +5145,20 @@ export function KaprukaGenieApp() {
                 ) : null}
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                {visibleReplyChips.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => handleChipClick(chip)}
-                    className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
-                  >
-                    {getChipLabel(chip)}
-                  </button>
-                ))}
-              </div>
+              {!isGuidedMode ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {visibleReplyChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => handleChipClick(chip)}
+                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                    >
+                      {getChipLabel(chip)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {shouldShowProductSuggestions ? (
               <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -5199,7 +5192,7 @@ export function KaprukaGenieApp() {
                 {visibleProducts.map((product) => (
                   <article
                     key={product.id}
-                    className="overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                    className="flex h-full flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
                   >
                     <div className="relative h-44 overflow-hidden bg-[#eee9f5]">
                       <Image
@@ -5211,7 +5204,7 @@ export function KaprukaGenieApp() {
                         className="object-cover"
                       />
                     </div>
-                    <div className="p-3">
+                    <div className="flex flex-1 flex-col p-3">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-sm font-black">{product.name}</h3>
                         <span className="rounded-lg bg-[#f6f4fb] px-2 py-1 text-[11px] font-black text-[#3f246d]">
@@ -5232,7 +5225,7 @@ export function KaprukaGenieApp() {
                           {product.stockLabel}
                         </span>
                       </div>
-                      <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                      <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-3">
                         <button
                           type="button"
                           onClick={() => addToBuyBox(product)}
@@ -5252,6 +5245,20 @@ export function KaprukaGenieApp() {
                   </article>
                 ))}
               </div>
+              ) : null}
+              {isGuidedMode ? (
+                <div className="mt-5 flex flex-wrap justify-center gap-2 border-t border-[#e8e2f2] pt-4">
+                  {visibleReplyChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => handleChipClick(chip)}
+                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                    >
+                      {getChipLabel(chip)}
+                    </button>
+                  ))}
+                </div>
               ) : null}
                 </>
               )}
@@ -5306,7 +5313,7 @@ export function KaprukaGenieApp() {
               </div>
             ) : null}
 
-            {!isFormToolMode ? (
+            {!isFormToolMode && !isGuidedMode ? (
               <form
                 onSubmit={(event) => void handleSubmit(event)}
                 className="relative border-t border-[#e8e2f2] bg-white p-4"
