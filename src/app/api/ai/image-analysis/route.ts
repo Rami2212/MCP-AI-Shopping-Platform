@@ -7,24 +7,77 @@ import {
   stripModelThinking,
 } from "@/lib/aiPayload";
 import {
+  fetchGroqChatWithFallback,
   getGroqApiKey,
   getMissingGroqKeyMessage,
-  GROQ_CHAT_COMPLETIONS_URL,
   readGroqError,
 } from "@/lib/groqHosted";
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const DEFAULT_MODEL = "qwen/qwen3.6-27b";
+const DEFAULT_BACKUP_MODEL = "qwen/qwen3.6-27b";
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 type VisionAnalysis = {
+  fallback?: boolean;
   labels: ImageLabel[];
+  model?: string;
   productHints: string[];
   searchQuery: string;
   summary: string;
   visibleText: string[];
 };
+
+const GENERIC_HINTS = ["gift", "flowers", "cake", "chocolate"];
+
+function cleanFallbackTerms(value: string) {
+  return value
+    .split(/[^a-z0-9]+/)
+    .map((term) => term.trim().toLowerCase())
+    .filter(
+      (term) =>
+        term.length >= 3 &&
+        !/^\d+$/.test(term) &&
+        !/^\d+x\d+$/i.test(term) &&
+        !/^(img|image|photo|picture|screenshot|screen|scan|upload|whatsapp|document|file|jpeg|jpg|png|webp|heic|easy|final|copy|edited|edit|new|version|draft|small|large|wide|tall)$/.test(
+          term,
+        ),
+    );
+}
+
+function buildFallbackAnalysis(file: File): VisionAnalysis {
+  const baseName = file.name
+    .replace(/\.[a-z0-9]+$/i, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const preferredTerms = cleanFallbackTerms(baseName).filter((term) =>
+    /cake|chocolate|flower|flowers|rose|roses|perfume|gift|watch|hamper|bouquet|party|balloon|teddy|mug|jewel|jewellery|toy/i.test(
+      term,
+    ),
+  );
+  const terms = [...new Set([...preferredTerms, ...cleanFallbackTerms(baseName)])].slice(
+    0,
+    5,
+  );
+  const productHints = [...new Set([...terms, ...GENERIC_HINTS])].slice(0, 5);
+  const searchQuery = terms.slice(0, 3).join(" ") || "gift";
+  const focus = terms[0] ?? "gift";
+
+  return {
+    fallback: true,
+    labels: terms.slice(0, 3).map((term) => ({ label: term, score: 0.2 })),
+    productHints,
+    searchQuery,
+    summary:
+      terms.length > 0
+        ? `Vision is temporarily unavailable, so I searched for ${focus}-related gift ideas.`
+        : "Vision is temporarily unavailable, so I searched for general gift ideas instead.",
+    visibleText: [],
+  };
+}
 
 function parseLabels(payload: unknown): ImageLabel[] {
   if (!Array.isArray(payload)) {
@@ -121,6 +174,39 @@ function parseAnalysis(text: string): VisionAnalysis {
   }
 }
 
+function buildVisionRequest(model: string, imageUrl: string, useJsonMode: boolean) {
+  return {
+    model,
+    messages: [
+      {
+        role: "user" as const,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              'Analyze this shopping-related image for Kapruka Genie. Reply with a single JSON object only using this exact schema: {"summary":"one concise sentence","labels":[{"label":"short visual label","score":0.0}],"visibleText":["short text seen in the image"],"productHints":["products to search"],"searchQuery":"short product search query"}. Keep labels and productHints short. Use scores from 0 to 1. Include up to five labels.',
+          },
+          {
+            type: "image_url" as const,
+            image_url: {
+              url: imageUrl,
+            },
+          },
+        ],
+      },
+    ],
+    temperature: 0.2,
+    max_completion_tokens: 700,
+    ...(useJsonMode
+      ? {
+          response_format: {
+            type: "json_object" as const,
+          },
+        }
+      : {}),
+  };
+}
+
 export async function POST(request: Request) {
   const apiKey = getGroqApiKey();
 
@@ -154,43 +240,48 @@ export async function POST(request: Request) {
     "base64",
   )}`;
 
-  const response = await fetch(GROQ_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: 'Analyze this ecommerce image for Kapruka Genie image shopping. Return JSON only with this schema: {"summary":"one concise sentence","labels":[{"label":"short visual label","score":0.0}],"visibleText":["short text seen in the image"],"productHints":["products to search"],"searchQuery":"short product search query"}. Use scores from 0 to 1 and include up to five labels.',
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-              },
-            },
-          ],
-        },
-      ],
-      temperature: 0.2,
-      max_completion_tokens: 700,
-      response_format: {
-        type: "json_object",
-      },
-    }),
-    cache: "no-store",
-  });
+  const backupModels = [
+    process.env.GROQ_VISION_BACKUP_MODEL,
+    DEFAULT_BACKUP_MODEL,
+  ];
+  let { model: resolvedModel, response } = await fetchGroqChatWithFallback(
+    apiKey,
+    buildVisionRequest(model, imageUrl, true),
+    backupModels,
+  );
+
+  if (response.status === 400) {
+    const errorText = await readGroqError(response);
+
+    if (/Failed to generate JSON/i.test(errorText)) {
+      ({ model: resolvedModel, response } = await fetchGroqChatWithFallback(
+        apiKey,
+        buildVisionRequest(model, imageUrl, false),
+        backupModels,
+      ));
+    } else {
+      return NextResponse.json(
+        { error: errorText, model: resolvedModel },
+        { status: response.status },
+      );
+    }
+  }
 
   if (!response.ok) {
+    if (
+      response.status === 429 ||
+      response.status === 502 ||
+      response.status === 503 ||
+      response.status === 504
+    ) {
+      return NextResponse.json({
+        ...buildFallbackAnalysis(file),
+        model: resolvedModel,
+      });
+    }
+
     return NextResponse.json(
-      { error: await readGroqError(response), model },
+      { error: await readGroqError(response), model: resolvedModel },
       { status: response.status },
     );
   }
@@ -199,10 +290,10 @@ export async function POST(request: Request) {
 
   if (!content) {
     return NextResponse.json(
-      { error: "Groq returned an empty vision response.", model },
+      { error: "Groq returned an empty vision response.", model: resolvedModel },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ ...parseAnalysis(content), model });
+  return NextResponse.json({ ...parseAnalysis(content), model: resolvedModel });
 }

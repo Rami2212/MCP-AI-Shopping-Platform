@@ -91,6 +91,27 @@ type KaprukaSearchResponse = {
   results?: KaprukaSearchProduct[];
 };
 
+type KaprukaProductDetailResponse = {
+  category?: {
+    id?: string;
+    name?: string;
+    path?: string;
+    slug?: string;
+  };
+  description?: string;
+  id?: string;
+  images?: string[];
+  in_stock?: boolean;
+  name?: string;
+  price?: {
+    amount?: number;
+    currency?: string;
+  };
+  stock_level?: string;
+  summary?: string;
+  url?: string;
+};
+
 type KaprukaCityResponse = {
   cities?: Array<{
     aliases?: string[];
@@ -1791,16 +1812,15 @@ async function searchProductsByIds(
   mcp: Awaited<ReturnType<typeof createKaprukaMcpClient>>,
   productIds: string[],
 ) {
+  const normalizeProductId = (value: string) =>
+    value.trim().replace(/\s+/g, "").toUpperCase();
   const results = await Promise.allSettled(
     productIds.map((productId) =>
       withTimeout(
-        mcp.callTool<KaprukaSearchResponse>("kapruka_search_products", {
+        mcp.callTool<KaprukaProductDetailResponse>("kapruka_get_product", {
           currency: "LKR",
-          in_stock_only: false,
-          limit: 3,
-          q: productId,
+          product_id: productId,
           response_format: "json",
-          sort: "relevance",
         }),
         7000,
       ),
@@ -1808,20 +1828,40 @@ async function searchProductsByIds(
   );
   const seenIds = new Set<string>();
 
-  return results
-    .flatMap((result) =>
-      result.status === "fulfilled" ? (result.value.results ?? []) : [],
-    )
-    .filter((product) => {
-      const id = typeof product.id === "string" ? product.id.toUpperCase() : null;
+  return results.flatMap((result, index) => {
+    if (result.status !== "fulfilled") {
+      return [];
+    }
 
-      if (!id || seenIds.has(id)) {
-        return false;
-      }
+    const rawProduct = result.value;
+    const requestedId = normalizeProductId(productIds[index] ?? "");
+    const resolvedId = typeof rawProduct.id === "string"
+      ? normalizeProductId(rawProduct.id)
+      : "";
 
-      seenIds.add(id);
-      return true;
-    });
+    if (!resolvedId || resolvedId !== requestedId) {
+      return [];
+    }
+
+    const compareProduct: KaprukaSearchProduct = {
+      category: rawProduct.category,
+      id: rawProduct.id,
+      image_url: Array.isArray(rawProduct.images) ? rawProduct.images[0] : undefined,
+      in_stock: rawProduct.in_stock,
+      name: rawProduct.name,
+      price: rawProduct.price,
+      stock_level: rawProduct.stock_level,
+      summary: rawProduct.summary ?? rawProduct.description,
+      url: rawProduct.url,
+    };
+
+    if (seenIds.has(resolvedId)) {
+      return [];
+    }
+
+    seenIds.add(resolvedId);
+    return [compareProduct];
+  });
 }
 
 async function getGroqCommerce(

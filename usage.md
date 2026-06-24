@@ -14,7 +14,7 @@ Media routes use dedicated Groq model slugs because image and speech-to-text use
 | Commerce analytics | Produces deterministic status, next action, and risk without waiting for another model field. | `src/app/api/ai/commerce/route.ts` | Local code |
 | Product comparison | User enters product IDs; the commerce route searches Kapruka MCP for product values and uses AI only for the AI suggestion field. | `src/app/api/ai/commerce/route.ts` | use groq |
 | Order tracking AI suggestion | Kapruka MCP returns the tracking result, then AI writes a short next-step suggestion from that result. | `src/app/api/ai/commerce/route.ts` | use groq |
-| Image search analysis | Analyzes uploaded image content to create product search hints. The raw analysis is not shown to the user. | `src/app/api/ai/image-analysis/route.ts` | `GROQ_VISION_MODEL`, otherwise `meta-llama/llama-4-scout-17b-16e-instruct` |
+| Image search analysis | Analyzes uploaded image content to create product search hints. The raw analysis is not shown to the user. | `src/app/api/ai/image-analysis/route.ts` | `GROQ_VISION_MODEL`, otherwise `qwen/qwen3.6-27b` |
 | Voice recognition and transcription | Converts recognized English voice input into text for product search. The recording popup states that voice search is English-only; unrecognized audio produces a retry message. | `src/app/api/ai/voice-messages/route.ts` | `whisper-large-v3-turbo` (fixed) |
 | Voice reply output | Reads the latest English assistant message aloud using a preferred female English browser voice. The speaker is hidden in Sinhala and Singlish. | `src/kapruka-genie/KaprukaGenieApp.tsx` | Browser Speech Synthesis API; no AI model |
 

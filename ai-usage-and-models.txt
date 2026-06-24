@@ -75,7 +75,7 @@ The direct reply field of the main shopping response uses Novita-hosted Gemma. A
 7. IMAGE ANALYSIS
    Purpose: Analyze an uploaded image and return a summary, visual labels, confidence scores, visible text, product hints, and a catalog search query.
    API route: /api/ai/image-analysis
-   Primary model: meta-llama/llama-4-scout-17b-16e-instruct
+   Primary model: qwen/qwen3.6-27b
    Configuration: GROQ_VISION_MODEL -> code default
    Important: This route currently calls Groq directly and does not use the automatic text-model fallback helper. GROQ_VISION_BACKUP_MODEL appears in the example configuration but is not currently used by this route.
    Chained usage: After image analysis, the generated search query is passed through the normal commerce flow, which can add the message-analysis and main-response AI calls.

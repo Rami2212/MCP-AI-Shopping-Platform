@@ -55,8 +55,8 @@ GROQ_REQUEST_TIMEOUT_MS=5000
 GROQ_TOTAL_TIMEOUT_MS=10000
 MCP_REQUEST_TIMEOUT_MS=4000
 KAPRUKA_MCP_URL=https://mcp.kapruka.com/mcp
-GROQ_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-GROQ_VISION_BACKUP_MODEL=meta-llama/llama-4-maverick-17b-128e-instruct
+GROQ_VISION_MODEL=qwen/qwen3.6-27b
+GROQ_VISION_BACKUP_MODEL=qwen/qwen3.6-27b
 ```
 
 HTTP 429 and temporary Groq failures automatically retry with backup models.

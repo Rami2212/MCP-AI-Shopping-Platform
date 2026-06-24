@@ -113,6 +113,8 @@ type GiftMessagePreferences = {
 
 type ImageResponse = {
   error?: string;
+  fallback?: boolean;
+  model?: string;
   productHints?: string[];
   searchQuery?: string;
   summary?: string;
@@ -2001,6 +2003,10 @@ export function KaprukaGenieApp() {
 
   function getImageSearchReply(data: ImageResponse) {
     const imageSummary = data.summary?.trim();
+
+    if (data.fallback) {
+      return text.relatedGiftsReply;
+    }
 
     return imageSummary
       ? `${text.imageLooksLike} ${imageSummary}. ${text.relatedGiftsReply}`
@@ -4046,9 +4052,18 @@ export function KaprukaGenieApp() {
         content: getImageSearchReply(data),
       });
       await runCommerce(query, activeMode, profile, false);
-      setStatus("Groq image analysis complete. Kapruka MCP products updated.");
+      setStatus(
+        data.fallback
+          ? "Image upload used a best-effort fallback search. Kapruka MCP products updated."
+          : "Groq image analysis complete. Kapruka MCP products updated.",
+      );
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      addMessage({
+        role: "assistant",
+        content: `Image upload did not complete: ${message}`,
+      });
+      setStatus(message);
     } finally {
       setActivityMessage("");
       setIsImageProcessing(false);
