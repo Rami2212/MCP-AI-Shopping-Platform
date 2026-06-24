@@ -140,7 +140,7 @@ type ContextField =
 
 type ContextDraft = Record<ContextField, string>;
 
-type Language = "English" | "Sinhala" | "Singlish";
+type Language = "English" | "Sinhala" | "Singlish" | "Tanglish";
 
 type ShoppingProfile = {
   budget: string;
@@ -231,12 +231,13 @@ const starterChipGiftTypes: Record<string, string> = {
   "Find perfume": "Perfumes",
 };
 
-const languageOptions: Language[] = ["English", "Sinhala", "Singlish"];
+const languageOptions: Language[] = ["English", "Sinhala", "Singlish", "Tanglish"];
 
 const languageLabels: Record<Language, string> = {
   English: "English",
   Sinhala: "සිංහල",
   Singlish: "Singlish",
+  Tanglish: "Tanglish",
 };
 
 const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
@@ -253,6 +254,13 @@ const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
       role: "assistant",
       content:
         "Ayubowan! Mama Kapruka Genie. Oyata ona gift eka kiyanna, mama oyawa guide karannam.",
+    },
+  ],
+  Tanglish: [
+    {
+      role: "assistant",
+      content:
+        "Vanakkam! Naan Kapruka Genie. Neenga thedura gift pathi sollunga, naan unga details guide pannren.",
     },
   ],
 };
@@ -403,6 +411,18 @@ const contextQuestions: Record<
     recipient: "Gift eka denna one kaatada?",
     venue: "Event eka koheda thiyenne?",
   },
+  Tanglish: {
+    boxRecipient: "Indha gift box yaarukkaga?",
+    budget: "Budget evlo?",
+    category: "Enna mathiri gift type paakanum?",
+    eventType: "Event type enna?",
+    giftBoxTheme: "Gift box theme enna?",
+    itemCount: "Box la evalo items venum?",
+    occasion: "Indha gift enna occasion ku?",
+    participants: "Participants evalo per varuvaanga?",
+    recipient: "Gift yaarukku kudukkanum?",
+    venue: "Event enga nadakkudhu?",
+  },
 };
 
 const contextQuestionOverrides: Record<
@@ -428,12 +448,22 @@ const contextQuestionOverrides: Record<
     participants: "Participants keedenek innawada?",
     venue: "Event eka koheda thiyenne?",
   },
+  Tanglish: {
+    boxRecipient: "Gift box yaarukkaga?",
+    category: "Enna gift type paakanum?",
+    eventType: "Event type enna?",
+    giftBoxTheme: "Gift box theme enna?",
+    itemCount: "Box ku evalo items venum?",
+    participants: "Participants evalo per?",
+    venue: "Event enga irukku?",
+  },
 };
 
 const giftTypeMessages: Record<Language, string> = {
   English: "Thanks. What type of gift would you like to explore?",
   Sinhala: "ස්තුතියි. ඔබ බලන්න කැමති තෑගි වර්ගය තෝරන්න.",
   Singlish: "Thanks. mokak wage gift type ekak balannada?",
+  Tanglish: "Thanks. Enna gift type paakanum?",
 };
 
 const contextFieldOptions: Record<ContextField, string[]> = {
@@ -491,6 +521,18 @@ const contextFieldLabelsByLanguage: Record<
     recipient: "Recipient",
     venue: "Venue",
   },
+  Tanglish: {
+    boxRecipient: "Recipient",
+    budget: "Budget",
+    category: "Gift type",
+    eventType: "Event type",
+    giftBoxTheme: "Theme",
+    itemCount: "Items",
+    occasion: "Occasion",
+    participants: "Participants",
+    recipient: "Recipient",
+    venue: "Venue",
+  },
 };
 
 const contextFieldLabelOverrides: Record<
@@ -511,6 +553,18 @@ const contextFieldLabelOverrides: Record<
     venue: "ස්ථානය",
   },
   Singlish: {
+    boxRecipient: "Recipient",
+    budget: "Budget",
+    category: "Gift type",
+    eventType: "Event type",
+    giftBoxTheme: "Theme",
+    itemCount: "Items",
+    occasion: "Occasion",
+    participants: "Participants",
+    recipient: "Recipient",
+    venue: "Venue",
+  },
+  Tanglish: {
     boxRecipient: "Recipient",
     budget: "Budget",
     category: "Gift type",
@@ -816,6 +870,48 @@ const copy: Record<
     useContextCard: "Uda preferences use karanna...",
     userContext: "Preferences",
   },
+  Tanglish: {
+    active: "Active",
+    addProducts: "Order build panna products add pannunga.",
+    addToBuyBox: "Cart ku add pannunga",
+    allContextDetected: "Unga message la preferences detect aayiduchu.",
+    askPlaceholder: "Genie kitta search, compare, plan, checkout kekkalaam...",
+    buyBox: "Cart",
+    checkout: "Delivery address",
+    city: "City",
+    clearHistory: "History clear pannunga",
+    comparePrompt: "2 illa 3 product IDs kudunga. Naan compare pannren.",
+    continueWithoutContext: "Preferences illama continue pannunga",
+    contextIntro: "Unga message la irundhu details detect panniten.",
+    contextTitle: "Shopping preferences set pannunga",
+    createOrderLink: "Create Order Link",
+    date: "Date",
+    detectedContext: "Detected preferences",
+    delivery: "Delivery",
+    deliveryInstructions: "Delivery instructions",
+    eventPrompt: "Event plan pannalaam. Keezha details kudunga.",
+    giftBoxPrompt: "Gift box build pannalaam. Keezha details kudunga.",
+    giftMessageLabel: "Gift message",
+    initialEmpty: "Search panna apram Kapruka products inga kaattappadum.",
+    initialLoading: "Products load aagudhu...",
+    language: "Language",
+    modes: "Agent Modes",
+    openCheckout: "Open Checkout",
+    productView: "Paarkka",
+    recipientName: "Recipient name",
+    recipientPhone: "Recipient phone",
+    relatedGiftsReply: "Unga request ku related gifts kaamikiren.",
+    send: "Send",
+    sendContext: "Preferences send pannunga",
+    sending: "Sending",
+    sendingContext: "Preferences sending",
+    senderName: "Sender name",
+    subtotal: "Subtotal",
+    trackingPrompt: "Kapruka order number kudunga. Latest status paathuttu sollren.",
+    total: "Total",
+    useContextCard: "Mela irukka preferences use pannunga...",
+    userContext: "Preferences",
+  },
 };
 
 const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>>> = {
@@ -863,6 +959,21 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
+  Tanglish: {
+    deliveryInstructions: "Delivery instructions",
+    giftMessageLabel: "Gift message",
+    imageLooksLike: "Unga image la theriyardhu",
+    processing: "Processing...",
+    recordingVoice: "Voice record aagudhu...",
+    transcribingVoice: "Voice note text aagudhu...",
+    uploadingImage: "Image process aagudhu...",
+    voicePause: "Pause",
+    voiceEnglishOnly: "Voice search ippo English mattum support pannudhu.",
+    voiceRetry:
+      "Voice message clear aa puriyala. Dayavu seithu English la innum oru thadava try pannunga.",
+    voiceResume: "Resume",
+    voiceStop: "Stop",
+  },
 };
 
 const starterChipLabels: Record<Language, Record<string, string>> = {
@@ -883,6 +994,14 @@ const starterChipLabels: Record<Language, Record<string, string>> = {
     "Track an order": "Order track karanna",
     "Write a gift message": "Gift message liyanna",
   },
+  Tanglish: {
+    "Build a gift box": "Gift box build pannunga",
+    "Compare products": "Products compare pannunga",
+    "Find a gift": "Gift thedunga",
+    "Plan an event": "Event plan pannunga",
+    "Track an order": "Order track pannunga",
+    "Write a gift message": "Gift message ezhudhunga",
+  },
 };
 
 const starterChipOverrides: Record<Language, Record<string, string>> = {
@@ -900,6 +1019,13 @@ const starterChipOverrides: Record<Language, Record<string, string>> = {
     "Find flowers": "Flowers hoyanna",
     "Find perfume": "Perfume hoyanna",
     "Same-day delivery": "Ada delivery",
+  },
+  Tanglish: {
+    "Find a cake": "Cake thedunga",
+    "Find chocolates": "Chocolates thedunga",
+    "Find flowers": "Flowers thedunga",
+    "Find perfume": "Perfume thedunga",
+    "Same-day delivery": "Innaikku delivery",
   },
 };
 
@@ -947,6 +1073,27 @@ const optionLabels: Record<Language, Record<string, string>> = {
     "Under Rs. 2,500": "Rs. 2,500 ta adu",
     Wedding: "Vivahaya",
   },
+  Tanglish: {
+    "Above Rs. 10,000": "Rs. 10,000 mela",
+    Anniversary: "Anniversary",
+    Birthday: "Birthday",
+    Child: "Child",
+    Chocolate: "Chocolate",
+    Couple: "Couple",
+    Cakes: "Cakes",
+    Electronics: "Electronics",
+    Fashion: "Fashion",
+    Female: "Female",
+    Flowers: "Flowers",
+    Graduation: "Graduation",
+    Male: "Male",
+    Other: "Other",
+    Perfumes: "Perfumes",
+    "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
+    "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
+    "Under Rs. 2,500": "Rs. 2,500 keela",
+    Wedding: "Wedding",
+  },
 };
 
 const contextOptionLabels: Record<Language, Record<string, string>> = {
@@ -989,6 +1136,25 @@ const contextOptionLabels: Record<Language, Record<string, string>> = {
     "Under 10": "10 ta adu",
     Wellness: "Wellness",
   },
+  Tanglish: {
+    "2 items": "2 items",
+    "3 items": "3 items",
+    "4 items": "4 items",
+    "5+ items": "5+ items",
+    "10 - 25": "10 - 25",
+    "25 - 50": "25 - 50",
+    "Above 50": "50 ku mela",
+    "Family gathering": "Family gathering",
+    Home: "Home",
+    Hotel: "Hotel",
+    Office: "Office",
+    "Office party": "Office party",
+    Outdoor: "Outdoor",
+    Party: "Party",
+    Perfume: "Perfume",
+    "Under 10": "10 ku keela",
+    Wellness: "Wellness",
+  },
 };
 
 const dynamicChipLabels: Record<Language, Record<string, string>> = {
@@ -1009,6 +1175,16 @@ const dynamicChipLabels: Record<Language, Record<string, string>> = {
     "Colombo delivery": "Colombo delivery",
     "Create order link": "Order link hadanna",
     "More like this": "Me wage thawa",
+    Perfume: "Perfume",
+    Roses: "Roses",
+    Watch: "Watch",
+  },
+  Tanglish: {
+    "Check delivery": "Delivery check pannunga",
+    Chocolate: "Chocolate",
+    "Colombo delivery": "Colombo delivery",
+    "Create order link": "Order link create pannunga",
+    "More like this": "Idhu maadhiri innum",
     Perfume: "Perfume",
     Roses: "Roses",
     Watch: "Watch",
@@ -1056,6 +1232,24 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "Suggest more": "Thawa yojana",
     Watch: "Watch",
   },
+  Tanglish: {
+    "Check delivery": "Delivery check pannunga",
+    Chocolate: "Chocolate",
+    "Colombo delivery": "Colombo delivery",
+    "Create order link": "Order link create pannunga",
+    "Enter order number": "Order number kudunga",
+    "More like this": "Idhu maadhiri innum",
+    "Next item": "Next item",
+    "Open checkout": "Open checkout",
+    Perfume: "Perfume",
+    Roses: "Roses",
+    "Search more products": "Innum products thedunga",
+    "Search products": "Products thedunga",
+    "Track another order": "Innum oru order track pannunga",
+    "Track order": "Order track pannunga",
+    "Suggest more": "Innum suggest pannunga",
+    Watch: "Watch",
+  },
 };
 
 const iconPaths: Record<IconName, string> = {
@@ -1087,8 +1281,6 @@ const CHAT_STORE_NAME = "chat-state";
 const CHAT_STATE_KEY = "current";
 const CHAT_STORAGE_KEY = "kapruka-genie-chat-state";
 const INTRO_PANEL_STORAGE_KEY = "kapruka-genie-intro-panel-date";
-const STATUS_BAR_HIDDEN_STORAGE_KEY = "kapruka-genie-status-bar-hidden";
-
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
 }
@@ -1212,6 +1404,13 @@ const rotatingActivityMessages: Record<Language, string[]> = {
     "Galapena options thoramin...",
     "Reply eka hadamin...",
   ],
+  Tanglish: [
+    "Unga request paathuttu irukken...",
+    "Preferences check pannittu irukken...",
+    "Kapruka products thedittu irukken...",
+    "Best options match pannittu irukken...",
+    "Reply ready pannittu irukken...",
+  ],
 };
 
 export function KaprukaGenieApp() {
@@ -1268,7 +1467,6 @@ export function KaprukaGenieApp() {
   const [status, setStatus] = useState(
     "Groq chat and media ready. Kapruka MCP commerce ready.",
   );
-  const [isStatusBarVisible, setIsStatusBarVisible] = useState(true);
   const [activityMessage, setActivityMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isImageProcessing, setIsImageProcessing] = useState(false);
@@ -1501,11 +1699,15 @@ export function KaprukaGenieApp() {
     if (!data.products || data.products.length === 0) {
       if (responseLanguage === "Sinhala") return "Products හමු වුණේ නැහැ.";
       if (responseLanguage === "Singlish") return "Products hambune naha.";
+      if (responseLanguage === "Tanglish") return "Products kidaikkala.";
       return "I could not find matching products.";
     }
 
     if (responseLanguage === "Sinhala") return "ඔබේ ඉල්ලීමට ගැළපෙන options කිහිපයක් හමු වුණා.";
     if (responseLanguage === "Singlish") return "Oyage illimata galapena options tikak hambuna.";
+    if (responseLanguage === "Tanglish") {
+      return "Unga request ku match aagara options sila kidaichirukku.";
+    }
     return "I found a few options related to your request.";
   }
 
@@ -1526,6 +1728,10 @@ export function KaprukaGenieApp() {
 
     if (language === "Singlish") {
       return "Request eka time out una. Ayeth try karanna.";
+    }
+
+    if (language === "Tanglish") {
+      return "Request timeout aayiduchu. Innum oru thadava try pannunga.";
     }
 
     return "The request timed out. Please try again.";
@@ -1557,6 +1763,7 @@ export function KaprukaGenieApp() {
   function getTryAgainLabel() {
     if (language === "Sinhala") return "නැවත උත්සාහ කරන්න";
     if (language === "Singlish") return "Ayeth try karanna";
+    if (language === "Tanglish") return "Retry pannunga";
     return "Try again";
   }
 
@@ -1700,6 +1907,10 @@ export function KaprukaGenieApp() {
       return `Yojitha item list eka:\n${itemList}\n\nMulinnama ${nextItem} walata options pennannam. Ilanga item ekata yanna Next item obanna.`;
     }
 
+    if (replyLanguage === "Tanglish") {
+      return `Suggested item list:\n${itemList}\n\nMudhal la ${nextItem} ku options kaamikiren. Adutha item ku poganum na Next item use pannunga.`;
+    }
+
     return `Suggested item list:\n${itemList}\n\nI will start by showing options for ${nextItem}. Use Next item to move through the list.`;
   }
 
@@ -1709,17 +1920,20 @@ export function KaprukaGenieApp() {
     if (isMore) {
       if (language === "Sinhala") return `${label} walata thawa options pennanawa.`;
       if (language === "Singlish") return `${label} walata thawa options pennanawa.`;
+      if (language === "Tanglish") return `${label} ku innum sila options kaamikiren.`;
       return `I will show more options for ${label}.`;
     }
 
     if (typeof item !== "string") {
       if (language === "Sinhala") return `Dan ${label} walata cards pennanawa.`;
       if (language === "Singlish") return `Dan ${label} walata cards pennanawa.`;
+      if (language === "Tanglish") return `Ippo ${label} ku cards kaatturen.`;
       return `Now I will suggest ${label}.`;
     }
 
     if (language === "Sinhala") return `දැන් ${item} සඳහා cards පෙන්වනවා.`;
     if (language === "Singlish") return `Dan ${item} walata cards pennanawa.`;
+    if (language === "Tanglish") return `Ippo ${item} ku cards kaatturen.`;
     return `Now I will suggest ${item}.`;
   }
 
@@ -2092,6 +2306,7 @@ export function KaprukaGenieApp() {
                 <option>English</option>
                 <option>Sinhala</option>
                 <option>Singlish</option>
+                <option>Tanglish</option>
               </select>
             </label>
             <label className="grid gap-1 text-sm font-bold text-[#675f79]">
@@ -2157,22 +2372,6 @@ export function KaprukaGenieApp() {
       </div>
     );
   }
-
-  useEffect(() => {
-    function syncStatusBarPreference() {
-      try {
-        setIsStatusBarVisible(
-          localStorage.getItem(STATUS_BAR_HIDDEN_STORAGE_KEY) !== "true",
-        );
-      } catch {
-        setIsStatusBarVisible(true);
-      }
-    }
-
-    syncStatusBarPreference();
-    window.addEventListener("storage", syncStatusBarPreference);
-    return () => window.removeEventListener("storage", syncStatusBarPreference);
-  }, []);
 
   useEffect(() => {
     if (!isSending) {
@@ -3061,6 +3260,8 @@ export function KaprukaGenieApp() {
         content:
           language === "Singlish"
             ? "Checklist eke okkoma item cards pennuwa."
+            : language === "Tanglish"
+              ? "Checklist la irundha ella item cards um kaattitten."
             : language === "Sinhala"
               ? "Checklist item cards සියල්ල පෙන්වා අවසන්."
               : "I have shown the checklist item cards.",
@@ -3146,6 +3347,8 @@ export function KaprukaGenieApp() {
         content:
           language === "Singlish"
             ? "Thawa budget ekata galapena options pennanawa."
+            : language === "Tanglish"
+              ? "Unga budget ku set aagara innum sila options inga irukku."
             : language === "Sinhala"
               ? "ඔබේ අයවැයට ගැළපෙන තවත් විකල්ප පෙන්වන්නම්."
               : "Here are more options within your budget.",
@@ -3501,9 +3704,14 @@ export function KaprukaGenieApp() {
 
   async function handleClearHistory() {
     const nextSession = getDefaultModeSession(activeMode);
+    const preservedProducts = recommendedProducts;
 
     setModeSessions({});
-    applyModeSession(nextSession);
+    applyModeSession({
+      ...nextSession,
+      fitReasons: {},
+      recommendedProducts: preservedProducts,
+    });
     resetToolPanels();
     setStatus("Chat history cleared.");
 
@@ -4370,11 +4578,6 @@ export function KaprukaGenieApp() {
             </button>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-            {isStatusBarVisible ? (
-              <div className="min-w-0 rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)] md:max-w-[440px]">
-                {status}
-              </div>
-            ) : null}
             <Link
               href="/features"
               className="hidden h-11 place-items-center rounded-[13px] border border-[#e8e2f2] bg-white px-4 text-sm font-black text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] xl:grid"

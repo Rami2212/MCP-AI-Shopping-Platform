@@ -43,7 +43,7 @@ type CommerceRecommendation = {
 };
 
 type MessageIntent = "command" | "conversation" | "question";
-type DetectedLanguage = "English" | "Sinhala" | "Singlish";
+type DetectedLanguage = "English" | "Sinhala" | "Singlish" | "Tanglish";
 
 type PreferenceSnapshot = {
   budget: string | null;
@@ -1001,7 +1001,10 @@ function normalizeDetectedLanguage(
   value: string | null,
   fallback: DetectedLanguage,
 ): DetectedLanguage {
-  return value === "English" || value === "Sinhala" || value === "Singlish"
+  return value === "English" ||
+    value === "Sinhala" ||
+    value === "Singlish" ||
+    value === "Tanglish"
     ? value
     : fallback;
 }
@@ -1137,7 +1140,7 @@ async function getGroqMessageAnalysis(
         {
           role: "system",
           content:
-            "Analyze only the latest user request; selectedLanguage is authoritative. Return two preference layers. preferences contains only normalized visible preset changes explicitly stated now. extendedPreferences contains the exact, specific English search meaning explicitly stated now for budget, recipient, occasion, and giftType; return null for every field not changed in the latest request. Preserve useful specificity: if the selected type is Cakes and the user now asks for chocolate cakes, extendedPreferences.giftType must be 'chocolate cakes' while preferences.category may remain Cakes. Translate Sinhala or Singlish preference meaning into concise English search text. Never copy older preferences from recentConversation into an update. Classify intent as question, command, or conversation. Normalize visible budgets and categories only to the supplied preset options. Return JSON only and do not answer the user.",
+            "Analyze only the latest user request; selectedLanguage is authoritative. Return two preference layers. preferences contains only normalized visible preset changes explicitly stated now. extendedPreferences contains the exact, specific English search meaning explicitly stated now for budget, recipient, occasion, and giftType; return null for every field not changed in the latest request. Preserve useful specificity: if the selected type is Cakes and the user now asks for chocolate cakes, extendedPreferences.giftType must be 'chocolate cakes' while preferences.category may remain Cakes. Translate Sinhala, Singlish, or Tanglish preference meaning into concise English search text. Never copy older preferences from recentConversation into an update. Classify intent as question, command, or conversation. Normalize visible budgets and categories only to the supplied preset options. Return JSON only and do not answer the user.",
         },
         {
           role: "user",
@@ -1319,6 +1322,10 @@ function getNoProductListFallback(language: DetectedLanguage) {
     return "Oyage illimata galapena options product cards walin pennanawa.";
   }
 
+  if (language === "Tanglish") {
+    return "Unga request ku match aagara options product cards la kaattappadudhu.";
+  }
+
   return "Matching options are shown in the product cards.";
 }
 
@@ -1329,6 +1336,10 @@ function getReplyLanguageInstruction(language: DetectedLanguage) {
 
   if (language === "Singlish") {
     return "CRITICAL LANGUAGE RULE: Reply only in natural conversational Sinhala written with Latin letters. Ignore the language used in the query. Every sentence must use Sinhala vocabulary and grammar such as oyage, mata, ona, puluwan, hoyala, balanna, or kiyanna. Do not write an English sentence and do not use Sinhala script.";
+  }
+
+  if (language === "Tanglish") {
+    return "CRITICAL LANGUAGE RULE: Reply only in natural conversational Tanglish written with Latin letters. Ignore the language used in the query. Every sentence must primarily use Tamil vocabulary with light English mixing such as unga, enakku, venum, paakanum, kudunga, and pannunga. Do not write Tamil script and do not answer fully in English.";
   }
 
   return "CRITICAL LANGUAGE RULE: Reply only in English.";
@@ -1357,6 +1368,19 @@ function isReplyInSelectedLanguage(
       ) ?? [];
 
     return new Set(singlishWords.map((word) => word.toLowerCase())).size >= 2;
+  }
+
+  if (language === "Tanglish") {
+    if (/[\u0B80-\u0BFF]/u.test(reply) || /[\u0D80-\u0DFF]/u.test(reply)) {
+      return false;
+    }
+
+    const tanglishWords =
+      reply.match(
+        /\b(?:anna|appadi|budget|enna|enakku|enga|evalo|gift|illa|indha|inga|innaikku|irukku|kaami|kaamikiren|kidaichu|kudunga|ku|naan|neenga|paakanum|pannalaam|pannunga|pathi|thedunga|unga|venum)\b/gi,
+      ) ?? [];
+
+    return new Set(tanglishWords.map((word) => word.toLowerCase())).size >= 2;
   }
 
   return true;
@@ -1868,7 +1892,7 @@ async function getGroqTrackingSuggestion(
         {
           role: "system",
           content:
-            "You give one concise post-order shopping support suggestion. Do not invent tracking facts. Reply in the requested language. Singlish means natural conversational Sinhala written entirely with Latin letters, not English; understand informal Singlish spelling and never use Sinhala script for a Singlish reply. Return JSON only.",
+            "You give one concise post-order shopping support suggestion. Do not invent tracking facts. Reply in the requested language. Singlish means natural conversational Sinhala written entirely with Latin letters, not English; understand informal Singlish spelling and never use Sinhala script for a Singlish reply. Tanglish means natural conversational Tamil mixed with simple English words written entirely with Latin letters; never use Tamil script and do not answer fully in English. Return JSON only.",
         },
         {
           role: "user",
@@ -1916,7 +1940,7 @@ async function getGroqCompareSuggestion(
         {
           role: "system",
           content:
-            "Give one detailed final comparison paragraph using only the supplied products. Compare product 1 and product 2 tradeoffs, price/value, use case, strengths, weaknesses, and say which is better for which buyer and why. Reply in the requested language. Singlish means natural conversational Sinhala written entirely with Latin letters, not English; understand informal Singlish spelling and never use Sinhala script for a Singlish reply. Return JSON only.",
+            "Give one detailed final comparison paragraph using only the supplied products. Compare product 1 and product 2 tradeoffs, price/value, use case, strengths, weaknesses, and say which is better for which buyer and why. Reply in the requested language. Singlish means natural conversational Sinhala written entirely with Latin letters, not English; understand informal Singlish spelling and never use Sinhala script for a Singlish reply. Tanglish means natural conversational Tamil mixed with simple English words written entirely with Latin letters; never use Tamil script and do not answer fully in English. Return JSON only.",
         },
         {
           role: "user",
@@ -1963,6 +1987,7 @@ async function getGroqGiftMessage(
 ) {
   const isSinhala = preferences.language?.trim().toLowerCase() === "sinhala";
   const isSinglish = preferences.language?.trim().toLowerCase() === "singlish";
+  const isTanglish = preferences.language?.trim().toLowerCase() === "tanglish";
   const { response } = await fetchGroqChatWithFallback(apiKey, {
     model: isSinhala
       ? process.env.GROQ_SINHALA_GIFT_MESSAGE_MODEL ??
@@ -1970,12 +1995,15 @@ async function getGroqGiftMessage(
       : isSinglish
         ? process.env.GROQ_SINGLISH_GIFT_MESSAGE_MODEL ??
           DEFAULT_SINGLISH_GIFT_MESSAGE_MODEL
+      : isTanglish
+        ? process.env.GROQ_SINGLISH_GIFT_MESSAGE_MODEL ??
+          DEFAULT_SINGLISH_GIFT_MESSAGE_MODEL
       : process.env.GROQ_GIFT_MESSAGE_MODEL ?? DEFAULT_GIFT_MESSAGE_MODEL,
     messages: [
         {
           role: "system",
           content:
-            `${isSinhala ? "" : "/no_think\n"}You are a native Sri Lankan gift-card writer. Generate one fresh, polished message in the explicitly requested language. Sinhala must use fluent, idiomatic Sinhala script rather than a literal word-for-word translation. Singlish must be natural conversational Sinhala written entirely with Latin letters, never English prose or Sinhala script. Natural Singlish style includes 'Obata subama suba upandinayak wewa!' and 'Oyata godak adarei. Hemadama sathutin saha nirogiwa inna.' Do not copy these examples. Respect the requested size, tone, relationship, occasion, and suggestions. Return exactly one JSON object containing a giftMessage string and no other text.`,
+            `${isSinhala ? "" : "/no_think\n"}You are a native Sri Lankan gift-card writer. Generate one fresh, polished message in the explicitly requested language. Sinhala must use fluent, idiomatic Sinhala script rather than a literal word-for-word translation. Singlish must be natural conversational Sinhala written entirely with Latin letters, never English prose or Sinhala script. Tanglish must be natural conversational Tamil mixed with simple English words, written entirely with Latin letters and never Tamil script. Natural Singlish style includes 'Obata subama suba upandinayak wewa!' and 'Oyata godak adarei. Hemadama sathutin saha nirogiwa inna.' Do not copy these examples. Respect the requested size, tone, relationship, occasion, and suggestions. Return exactly one JSON object containing a giftMessage string and no other text.`,
         },
         {
           role: "user",
@@ -2047,7 +2075,7 @@ export async function POST(request: Request) {
                 {
                   role: "system",
                   content:
-                    "Write one fresh, polished gift-card message in the explicitly requested language. Sinhala must use natural Sinhala script. Singlish must be natural conversational Sinhala written only with Latin letters. Respect the requested size, tone, recipient, occasion, and suggestions. Return only the finished gift message with no label, JSON, quotation marks, or explanation.",
+                    "Write one fresh, polished gift-card message in the explicitly requested language. Sinhala must use natural Sinhala script. Singlish must be natural conversational Sinhala written only with Latin letters. Tanglish must be natural conversational Tamil with light English mixing, written only with Latin letters. Respect the requested size, tone, recipient, occasion, and suggestions. Return only the finished gift message with no label, JSON, quotation marks, or explanation.",
                 },
                 {
                   role: "user",

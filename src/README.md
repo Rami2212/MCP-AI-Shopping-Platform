@@ -84,7 +84,7 @@ more specific details from later messages without changing the visible presets.
 Product searches use only these extended values; for example, visible `Cakes`
 can remain selected while the hidden search gift type becomes `chocolate cakes`.
 
-The no-login admin dashboard at `/kapruka-admin` shows the fixed provider setup.
+The shopping app now keeps provider routing inside the main experience without a separate admin dashboard.
 Hugging Face through Novita generates Sinhala and Singlish shopping-chat replies;
 Groq generates English shopping-chat replies. Gift messages continue to use
 the same routing: Novita for Sinhala and Singlish, and Groq for English. Groq is

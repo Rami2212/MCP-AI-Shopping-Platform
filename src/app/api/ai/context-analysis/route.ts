@@ -37,7 +37,7 @@ const giftTypeOptions = [
 ] as const;
 
 type RequiredField = (typeof requiredFields)[number];
-type DetectedLanguage = "English" | "Sinhala" | "Singlish";
+type DetectedLanguage = "English" | "Sinhala" | "Singlish" | "Tanglish";
 
 type LocalAnalysis = {
   budget: string | null;
@@ -228,7 +228,10 @@ function normalizeRecipient(value: string | null) {
 function normalizeDetectedLanguage(
   value: string | null,
 ): DetectedLanguage | null {
-  return value === "English" || value === "Sinhala" || value === "Singlish"
+  return value === "English" ||
+    value === "Sinhala" ||
+    value === "Singlish" ||
+    value === "Tanglish"
     ? value
     : null;
 }
@@ -422,7 +425,7 @@ export async function POST(request: Request) {
         {
           role: "system",
           content:
-            "You analyze the latest Kapruka Genie shopping message. Do not detect or infer the user's language. selectedLanguage is authoritative. Singlish means Sinhala meaning written informally with Latin letters, not English; understand spelling variations and common words such as mata, oyata, ona, hoyanna, denna, puluwanda, keeyada, and adu as natural Sinhala. Extract budget, recipient, occasion, and gift type only when explicitly present in the current message. Return null for any absent preference; never use Other as a default. Normalize only the four exact preset budget ranges to their matching option, and return budget Other only for an explicitly requested non-preset numeric budget. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Values stated in the current message replace conflicting existing context; existing context only fills details omitted from the message. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. For any other specific gift or product type, return category Other and preserve its short English name in requestedGiftType. Return JSON only.",
+            "You analyze the latest Kapruka Genie shopping message. Do not detect or infer the user's language. selectedLanguage is authoritative. Singlish means Sinhala meaning written informally with Latin letters, not English; understand spelling variations and common words such as mata, oyata, ona, hoyanna, denna, puluwanda, keeyada, and adu as natural Sinhala. Tanglish means Tamil meaning written with Latin letters and often mixed with English words; understand common forms such as enakku, venum, theduren, gift, budget, and evlo. Extract budget, recipient, occasion, and gift type only when explicitly present in the current message. Return null for any absent preference; never use Other as a default. Normalize only the four exact preset budget ranges to their matching option, and return budget Other only for an explicitly requested non-preset numeric budget. Return occasion Other only for an explicitly requested occasion outside Birthday, Anniversary, Wedding, or Graduation. Return recipient Other only for an explicitly requested recipient outside Male, Female, Child, or Couple. Values stated in the current message replace conflicting existing context; existing context only fills details omitted from the message. Normalize known gift types to Flowers, Cakes, Chocolate, Electronics, Perfumes, or Fashion. For any other specific gift or product type, return category Other and preserve its short English name in requestedGiftType. Return JSON only.",
         },
         {
           role: "user",
@@ -438,7 +441,7 @@ export async function POST(request: Request) {
                 "Under Rs. 2,500 | Rs. 2,500 - 5,000 | Rs. 5,000 - 10,000 | Above Rs. 10,000 | Other | null",
               category:
                 "Flowers | Cakes | Chocolate | Electronics | Perfumes | Fashion | Other | null",
-              detectedLanguage: "English | Sinhala | Singlish",
+              detectedLanguage: "English | Sinhala | Singlish | Tanglish",
               missingFields: ["budget", "recipient", "occasion"],
               occasion:
                 "Birthday | Anniversary | Wedding | Graduation | Other | null",
