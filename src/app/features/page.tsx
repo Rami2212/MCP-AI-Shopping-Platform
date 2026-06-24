@@ -4,11 +4,11 @@ import Link from "next/link";
 const features = [
   {
     title: "Smart shopping chat",
-    text: "Describe the recipient, occasion, budget, city, or gift type and Kapruka Genie turns it into live product suggestions.",
+    text: "Describe the recipient, occasion, budget, city, or gift type and Kapruka Genie turns it into live product suggestions plus a richer shopping reply grounded in the same updated preference context.",
   },
   {
     title: "Event and gift box planning",
-    text: "Build a guided checklist for parties, office events, birthdays, and curated gift boxes, then shop one item group at a time.",
+    text: "Build a guided checklist for parties, office events, birthdays, and curated gift boxes, then move through the flow with only Next item and Suggest more actions.",
   },
   {
     title: "Product compare",
@@ -69,7 +69,7 @@ const modeGuides = [
 const preferences = [
   {
     title: "User context",
-    text: "Budget, recipient, and occasion keep recommendations focused. The left panel stores these preferences per mode so each workflow can continue with the right context.",
+    text: "Budget, recipient, occasion, and gift type stay aligned across sidebar preferences and hidden extended preferences so chat updates, replies, and live product cards use the same context.",
   },
   {
     title: "Delivery context",
@@ -85,11 +85,11 @@ const preferences = [
   },
   {
     title: "Voice and image input",
-    text: "Use microphone input for spoken requests, speaker output for the latest reply, and image upload to search for visually similar gift ideas.",
+    text: "Use microphone input for spoken requests, speaker output for the latest reply, image upload to search for visually similar gift ideas, and lightweight send/receive sounds for chat feedback.",
   },
   {
     title: "Guided chips",
-    text: "Quick chips help continue the flow without typing, including Check delivery, Create order link, Next item, Suggest more, and category shortcuts.",
+    text: "Quick chips help continue the flow without typing. Smart Shopping uses discovery shortcuts, while Event Planner and Gift Box Builder stay focused on Next item and Suggest more.",
   },
 ];
 
@@ -146,21 +146,21 @@ export default function FeaturesPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-4">
-          {features.map((feature) => (
-            <article
-              key={feature.title}
-              className="rounded-[18px] border border-[#e8e2f2] bg-white p-4 shadow-[0_12px_32px_rgba(44,22,75,0.06)]"
-            >
-              <h2 className="text-lg font-black text-[#3f246d]">
-                {feature.title}
-              </h2>
-              <p className="mt-2 text-sm font-bold leading-6 text-[#675f79]">
-                {feature.text}
-              </p>
-            </article>
-          ))}
-        </section>
+        {/*<section className="grid gap-4 md:grid-cols-4">*/}
+        {/*  {features.map((feature) => (*/}
+        {/*    <article*/}
+        {/*      key={feature.title}*/}
+        {/*      className="rounded-[18px] border border-[#e8e2f2] bg-white p-4 shadow-[0_12px_32px_rgba(44,22,75,0.06)]"*/}
+        {/*    >*/}
+        {/*      <h2 className="text-lg font-black text-[#3f246d]">*/}
+        {/*        {feature.title}*/}
+        {/*      </h2>*/}
+        {/*      <p className="mt-2 text-sm font-bold leading-6 text-[#675f79]">*/}
+        {/*        {feature.text}*/}
+        {/*      </p>*/}
+        {/*    </article>*/}
+        {/*  ))}*/}
+        {/*</section>*/}
 
         <section className="grid gap-5 rounded-[22px] border border-[#e8e2f2] bg-white p-5 shadow-[0_12px_32px_rgba(44,22,75,0.06)]">
           <div className="flex flex-wrap items-end justify-between gap-3">

@@ -1361,8 +1361,8 @@ export function KaprukaGenieApp() {
     return localizedLabel.trim().split(/\s+/u).slice(0, 3).join(" ");
   }
 
-  function getGuidedReplyChips(replyChips: string[] = []) {
-    return replyChips.slice(0, 2);
+  function getGuidedReplyChips() {
+    return ["Next item", "Suggest more"];
   }
 
   function isRemovedGenericReplyChip(chip: string) {
@@ -2935,7 +2935,7 @@ export function KaprukaGenieApp() {
           language,
         )}`,
       );
-      setChips(getGuidedReplyChips(commerceData.chips));
+      setChips(getGuidedReplyChips());
       setStatus("Guided suggestions ready.");
       return;
     }
@@ -3043,7 +3043,7 @@ export function KaprukaGenieApp() {
     setStatus("Groq is answering and finding related guided options.");
     const commerceData = await runCommerce(content);
     appendAssistantMessage(getCommerceReply(commerceData));
-    setChips(getGuidedReplyChips(commerceData.chips));
+    setChips(getGuidedReplyChips());
     setStatus("Related guided options loaded.");
   }
 
