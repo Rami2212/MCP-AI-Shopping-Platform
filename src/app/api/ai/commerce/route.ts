@@ -1455,7 +1455,16 @@ function sanitizeChatReply(
     .flatMap((line) => line.match(/[^.!?]+[.!?]?/g) ?? [])
     .map((sentence) => sentence.trim())
     .filter(Boolean)
-    .filter((sentence) => !isProductSpecific(sentence));
+    .filter((sentence) => !isProductSpecific(sentence))
+    .filter((sentence, index, sentences) => {
+      const isCompleteSentence = /[.!?]["')\]]?$/.test(sentence);
+
+      if (isCompleteSentence) {
+        return true;
+      }
+
+      return index < sentences.length - 1;
+    });
   const sanitized = safeSentences.join(" ").replace(/\s+/g, " ").trim();
 
   return sanitized;
