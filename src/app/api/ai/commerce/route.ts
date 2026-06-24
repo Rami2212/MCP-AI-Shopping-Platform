@@ -1044,6 +1044,65 @@ function getClientPreferences(profile: ShoppingProfile) {
   };
 }
 
+function inferPresetCategoryFromGiftType(giftType: string | null | undefined) {
+  const normalized = giftType?.trim().toLowerCase() ?? "";
+
+  if (!normalized) {
+    return "";
+  }
+
+  if (/(flower|flowers|rose|roses|bouquet|floral)/.test(normalized)) {
+    return "Flowers";
+  }
+
+  if (/(cake|cakes|gateau|cupcake)/.test(normalized)) {
+    return "Cakes";
+  }
+
+  if (/(chocolate|chocolates|cocoa|truffle)/.test(normalized)) {
+    return "Chocolate";
+  }
+
+  if (/(perfume|perfumes|fragrance|cologne|scent)/.test(normalized)) {
+    return "Perfumes";
+  }
+
+  if (/(watch|fashion|wallet|bag|jewellery|jewelry|dress|clothing)/.test(normalized)) {
+    return "Fashion";
+  }
+
+  if (/(electronic|electronics|headphone|headphones|earbud|earbuds|speaker|gadget)/.test(normalized)) {
+    return "Electronics";
+  }
+
+  return "";
+}
+
+function getReplyPreferenceProfile(
+  profile: ShoppingProfile,
+  extendedPreferences: ExtendedPreferences,
+  messageAnalysis: MessageAnalysis,
+): ShoppingProfile {
+  const requestedGiftType =
+    cleanExtendedPreference(messageAnalysis.preferences.requestedGiftType) ||
+    extendedPreferences.giftType ||
+    profile.category ||
+    "";
+  const inferredCategory =
+    inferPresetCategoryFromGiftType(requestedGiftType) ||
+    inferPresetCategoryFromGiftType(extendedPreferences.giftType) ||
+    profile.category ||
+    "";
+
+  return {
+    ...profile,
+    budget: extendedPreferences.budget || profile.budget,
+    category: inferredCategory || profile.category,
+    occasion: extendedPreferences.occasion || profile.occasion,
+    recipient: extendedPreferences.recipient || profile.recipient,
+  };
+}
+
 function parseMessageAnalysis(
   text: string,
   fallbackLanguage: DetectedLanguage,
@@ -1140,7 +1199,7 @@ async function getGroqMessageAnalysis(
         {
           role: "system",
           content:
-            "Analyze only the latest user request; selectedLanguage is authoritative. Return two preference layers. preferences contains only normalized visible preset changes explicitly stated now. extendedPreferences contains the exact, specific English search meaning explicitly stated now for budget, recipient, occasion, and giftType; return null for every field not changed in the latest request. Preserve useful specificity: if the selected type is Cakes and the user now asks for chocolate cakes, extendedPreferences.giftType must be 'chocolate cakes' while preferences.category may remain Cakes. Translate Sinhala, Singlish, or Tanglish preference meaning into concise English search text. Never copy older preferences from recentConversation into an update. Classify intent as question, command, or conversation. Normalize visible budgets and categories only to the supplied preset options. Return JSON only and do not answer the user.",
+            "Analyze only the latest user request; selectedLanguage is authoritative. Return two preference layers. preferences contains only normalized visible preset changes explicitly stated now. extendedPreferences contains the exact, specific English search meaning explicitly stated now for budget, recipient, occasion, and giftType; return null for every field not changed in the latest request. Translate Sinhala, Singlish, or Tanglish preference meaning into concise English search text. Never copy older preferences from recentConversation into an update. Classify intent as question, command, or conversation. Normalize visible budgets and categories only to the supplied preset options. Return JSON only and do not answer the user.",
         },
         {
           role: "user",
@@ -1749,7 +1808,7 @@ async function getGroqCommerce(
         messages: [
           {
             role: "system",
-            content: `You are the direct conversation voice for Kapruka Genie. Answer the user's actual message naturally and concisely. Answer questions directly, acknowledge or carry out commands, and respond naturally to conversation. Product cards update separately, so never say that you updated products. Never include product names, product IDs, prices, product categories, product examples, recommendation lists, bullets, or numbered lists. If exact matching products were not found, say so briefly and ask whether the user wants to change a preference; do not invent or suggest a substitute category. The selected replyLanguage is authoritative. English product terms may appear only when necessary. Do not reveal reasoning or include <think> blocks. ${replyLengthInstruction} ${getReplyLanguageInstruction(language)}`,
+            content: `You are the direct conversation voice for Kapruka Genie. Answer the user's actual message naturally and concisely. Answer questions directly, acknowledge or carry out commands, and respond naturally to conversation. Product cards update separately, so never say that you updated products. Never include product names, product IDs, prices, product categories, product examples, recommendation lists, bullets, or numbered lists. If exact matching products were not found, say so briefly and ask whether the user wants to change a preference; do not invent or suggest a substitute category. Use activePreferences as the single source of truth for the user's current preferences and do not mix it with older or conflicting categories. The selected replyLanguage is authoritative. English product terms may appear only when necessary. Do not reveal reasoning or include <think> blocks. ${replyLengthInstruction} ${getReplyLanguageInstruction(language)}`,
           },
           {
             role: "user",
@@ -1757,6 +1816,12 @@ async function getGroqCommerce(
               delivery,
               recentConversation: conversationHistory,
               exactCatalogMatchCount: products.length,
+              activePreferences: {
+                budget: profile.budget,
+                category: profile.category,
+                occasion: profile.occasion,
+                recipient: profile.recipient,
+              },
               messageIntent: messageAnalysis.intent,
               mode,
               profile,
@@ -1787,7 +1852,7 @@ async function getGroqCommerce(
     messages: [
           {
             role: "system",
-            content: `You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. ${replyLengthInstruction} Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. Analytics and reply chips are generated locally, so do not return them. Return JSON only. ${getReplyLanguageInstruction(language)}`,
+            content: `You are the multilingual reasoning and conversation layer for Kapruka Genie. Product and delivery data already came from the real Kapruka MCP server. The submitted profile is the user's highest-priority requirement: never replace its requested gift type, budget, recipient, or occasion with a different option. Use activePreferences as the single source of truth for the user's current preferences and do not mix it with older or conflicting categories. Rank only provided products that satisfy those preferences. If no matching catalog products are supplied, clearly say that no exact match was found and ask whether the user wants to change a preference; never propose a substitute category such as mugs when flowers were requested. First respond to the user's actual message: answer a question directly, carry out or specifically acknowledge a command, and respond naturally to conversation. In Event Planner and Gift Box modes, always answer a custom user question or command directly in reply, even while a guided item list is active. Never use 'I updated the products', a translation of it, or another generic UI-update status as the reply. The product cards update separately while you reply. If facts needed to answer are not present in the supplied data, say so briefly or ask one useful clarification instead of inventing facts. Rank only the provided product IDs and never invent catalog products. ${replyLengthInstruction} Never include product names, product IDs, prices, or a written list of recommendations in reply because the UI shows products only as cards. For eventPlan and giftBox tasks, return the checklist only in eventPlan, never repeat that checklist in reply. For compare tasks, make reply a direct, useful response for the AI suggestions field without listing products. Analytics and reply chips are generated locally, so do not return them. Return JSON only. ${getReplyLanguageInstruction(language)}`,
         },
         {
           role: "user",
@@ -1807,6 +1872,12 @@ async function getGroqCommerce(
               ],
               reply: "concise direct answer to this specific user message",
               tracking: "optional order tracking update",
+            },
+            activePreferences: {
+              budget: profile.budget,
+              category: profile.category,
+              occasion: profile.occasion,
+              recipient: profile.recipient,
             },
             mode,
             messageIntent: messageAnalysis.intent,
@@ -2261,6 +2332,11 @@ export async function POST(request: Request) {
       effectiveProfile,
       effectiveExtendedPreferences,
     );
+    const replyPreferenceProfile = getReplyPreferenceProfile(
+      searchProfile,
+      effectiveExtendedPreferences,
+      resolvedMessageAnalysis,
+    );
     const activeBudgetFilter = parseBudgetFilter(
       effectiveExtendedPreferences.budget,
     );
@@ -2433,7 +2509,7 @@ export async function POST(request: Request) {
       userMessage,
       products,
       delivery,
-      searchProfile,
+      replyPreferenceProfile,
       resolvedMessageAnalysis,
       searchQuery,
       productSearch,
@@ -2461,7 +2537,7 @@ export async function POST(request: Request) {
         deliveryRequested,
         intent: resolvedMessageAnalysis.intent,
         products: responseProducts,
-        profile: searchProfile,
+        profile: replyPreferenceProfile,
         recommendations,
       }),
       chips:
@@ -2482,7 +2558,7 @@ export async function POST(request: Request) {
       },
       products: responseProducts,
       extendedPreferences: effectiveExtendedPreferences,
-      preferences: getClientPreferences(searchProfile),
+      preferences: getClientPreferences(replyPreferenceProfile),
       recommendations,
       reply: commerce.reply,
     });

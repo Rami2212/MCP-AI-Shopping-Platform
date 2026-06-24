@@ -157,6 +157,8 @@ type ExtendedPreferences = {
   giftType: string;
   occasion: string;
   recipient: string;
+  lastRepliedCount: number;
+  replyCount: number;
 };
 
 type ContextAnalysisResponse = {
@@ -619,8 +621,26 @@ function getExtendedPreferencesFromProfile(
   return {
     budget: profile.budget,
     giftType: profile.category,
+    lastRepliedCount: 0,
     occasion: profile.occasion,
     recipient: profile.recipient,
+    replyCount: 0,
+  };
+}
+
+function normalizeExtendedPreferences(
+  value: Partial<ExtendedPreferences> | undefined,
+  profile: ShoppingProfile,
+): ExtendedPreferences {
+  const fallback = getExtendedPreferencesFromProfile(profile);
+
+  return {
+    budget: value?.budget ?? fallback.budget,
+    giftType: value?.giftType ?? fallback.giftType,
+    lastRepliedCount: value?.lastRepliedCount ?? 0,
+    occasion: value?.occasion ?? fallback.occasion,
+    recipient: value?.recipient ?? fallback.recipient,
+    replyCount: value?.replyCount ?? 0,
   };
 }
 
@@ -631,7 +651,7 @@ function mergeExtendedPreferencesWithProfile(
   >,
   extendedUpdates?: Partial<ExtendedPreferences>,
 ): ExtendedPreferences {
-  return {
+  const nextPreferences = {
     budget:
       extendedUpdates?.budget ?? profileUpdates.budget ?? current.budget ?? "",
     giftType:
@@ -650,6 +670,54 @@ function mergeExtendedPreferencesWithProfile(
       current.recipient ??
       "",
   };
+  const didPreferenceChange =
+    nextPreferences.budget !== current.budget ||
+    nextPreferences.giftType !== current.giftType ||
+    nextPreferences.occasion !== current.occasion ||
+    nextPreferences.recipient !== current.recipient;
+
+  return {
+    ...nextPreferences,
+    lastRepliedCount: current.lastRepliedCount,
+    replyCount: didPreferenceChange ? current.replyCount + 1 : current.replyCount,
+  };
+}
+
+function havePreferenceValuesChanged(
+  current: ExtendedPreferences,
+  updates: Partial<Pick<ExtendedPreferences, "budget" | "giftType" | "occasion" | "recipient">>,
+) {
+  return (
+    (updates.budget !== undefined && updates.budget !== current.budget) ||
+    (updates.giftType !== undefined && updates.giftType !== current.giftType) ||
+    (updates.occasion !== undefined && updates.occasion !== current.occasion) ||
+    (updates.recipient !== undefined && updates.recipient !== current.recipient)
+  );
+}
+
+function applyExtendedPreferenceUpdates(
+  current: ExtendedPreferences,
+  updates: Partial<Pick<ExtendedPreferences, "budget" | "giftType" | "occasion" | "recipient">>,
+) {
+  const didPreferenceChange = havePreferenceValuesChanged(current, updates);
+
+  return {
+    ...current,
+    ...updates,
+    replyCount: didPreferenceChange ? current.replyCount + 1 : current.replyCount,
+  };
+}
+
+function syncExtendedPreferencesWithProfile(
+  current: ExtendedPreferences,
+  profile: ShoppingProfile,
+) {
+  return applyExtendedPreferenceUpdates(current, {
+    budget: profile.budget,
+    giftType: profile.category,
+    occasion: profile.occasion,
+    recipient: profile.recipient,
+  });
 }
 
 function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile {
@@ -664,9 +732,10 @@ function normalizeModeSession(session: ModeSession): ModeSession {
   const normalizedProfile = normalizeShoppingProfile(session.profile);
   return {
     ...session,
-    extendedPreferences:
-      session.extendedPreferences ??
-      getExtendedPreferencesFromProfile(normalizedProfile),
+    extendedPreferences: normalizeExtendedPreferences(
+      session.extendedPreferences,
+      normalizedProfile,
+    ),
     fitReasons: session.fitReasons ?? {},
     profile: normalizedProfile,
     recommendedProducts: session.recommendedProducts ?? [],
@@ -1523,9 +1592,13 @@ export function KaprukaGenieApp() {
   const isSelectedProductInCart = selectedProduct
     ? buyBox.some((product) => product.id === selectedProduct.id)
     : false;
-  const visibleReplyChips = messages.some((message) => message.role === "user")
-    ? chips.filter((chip) => !isRemovedGenericReplyChip(chip))
-    : chips;
+  const hasUserMessages = messages.some((message) => message.role === "user");
+  const visibleReplyChips =
+    activeMode === "Smart Shopping" && hasUserMessages
+      ? chips.filter((chip) => chip === "Suggest more")
+      : hasUserMessages
+        ? chips.filter((chip) => !isRemovedGenericReplyChip(chip))
+        : chips;
   const latestAssistantMessageIndex = messages.reduce(
     (latestIndex, message, index) =>
       message.role === "assistant" ? index : latestIndex,
@@ -1668,8 +1741,10 @@ export function KaprukaGenieApp() {
     setContextDraft(normalizedSession.contextDraft);
     setConversationStage(normalizedSession.conversationStage);
     setExtendedPreferences(
-      normalizedSession.extendedPreferences ??
-        getExtendedPreferencesFromProfile(normalizedSession.profile),
+      normalizeExtendedPreferences(
+        normalizedSession.extendedPreferences,
+        normalizedSession.profile,
+      ),
     );
     setFitReasons(normalizedSession.fitReasons ?? {});
     setInput(normalizedSession.input);
@@ -1691,16 +1766,41 @@ export function KaprukaGenieApp() {
   function getCommerceReply(data: CommerceResponse) {
     const reply = stripModelThinking(data.reply ?? "").trim();
     const responseLanguage = language;
+    const hasProducts = Boolean(data.products && data.products.length > 0);
+    const looksLikeNoMatchReply =
+      /no exact match|no exact matches|could not find|couldn't find|did not find|within your budget|adjust your budget|adjust your preferences/i.test(
+        reply,
+      );
 
-    if (reply) {
+    if (reply && !(hasProducts && looksLikeNoMatchReply)) {
       return reply;
     }
 
-    if (!data.products || data.products.length === 0) {
+    if (!hasProducts) {
       if (responseLanguage === "Sinhala") return "Products හමු වුණේ නැහැ.";
       if (responseLanguage === "Singlish") return "Products hambune naha.";
       if (responseLanguage === "Tanglish") return "Products kidaikkala.";
       return "I could not find matching products.";
+    }
+
+    const replyPreferences = data.preferences ?? {
+      budget: profile.budget,
+      category: profile.category,
+      occasion: profile.occasion,
+      recipient: profile.recipient,
+    };
+    const preferenceParts = [
+      replyPreferences.category,
+      replyPreferences.occasion,
+      replyPreferences.recipient,
+      replyPreferences.budget,
+    ].filter(Boolean);
+    const preferenceSummary = preferenceParts.join(", ");
+
+    if (responseLanguage === "English") {
+      return preferenceSummary
+        ? `I found some options that fit your preferences for ${preferenceSummary}.`
+        : "I found a few options related to your request.";
     }
 
     if (responseLanguage === "Sinhala") return "ඔබේ ඉල්ලීමට ගැළපෙන options කිහිපයක් හමු වුණා.";
@@ -2453,9 +2553,10 @@ export function KaprukaGenieApp() {
               chips: storedState.chips,
               contextDraft: storedState.contextDraft,
               conversationStage: storedState.conversationStage,
-              extendedPreferences:
-                storedState.extendedPreferences ??
-                getExtendedPreferencesFromProfile(storedState.profile),
+              extendedPreferences: normalizeExtendedPreferences(
+                storedState.extendedPreferences,
+                storedState.profile,
+              ),
               fitReasons: storedState.fitReasons ?? {},
               input: storedState.input,
               messages: storedState.messages,
@@ -2707,6 +2808,31 @@ export function KaprukaGenieApp() {
     });
   }
 
+  function markReplyGeneratedForCount(replyCount: number) {
+    setExtendedPreferences((current) =>
+      replyCount > current.lastRepliedCount
+        ? { ...current, lastRepliedCount: replyCount }
+        : current,
+    );
+  }
+
+  function appendAssistantMessageForReplyCount(
+    content: string,
+    replyPreferences = extendedPreferences,
+  ) {
+    if (
+      replyPreferences.replyCount > 0 &&
+      replyPreferences.replyCount <= replyPreferences.lastRepliedCount
+    ) {
+      return;
+    }
+
+    appendAssistantMessage(content);
+    if (replyPreferences.replyCount > 0) {
+      markReplyGeneratedForCount(replyPreferences.replyCount);
+    }
+  }
+
   function playChatSound(type: "receive" | "send") {
     if (typeof window === "undefined") {
       return;
@@ -2763,10 +2889,11 @@ export function KaprukaGenieApp() {
   ) {
     setProfile((current) => ({ ...current, [field]: value }));
     const extendedField = field === "category" ? "giftType" : field;
-    setExtendedPreferences((current) => ({
-      ...current,
-      [extendedField]: value,
-    }));
+    setExtendedPreferences((current) =>
+      applyExtendedPreferenceUpdates(current, {
+        [extendedField]: value,
+      }),
+    );
   }
 
   function addToBuyBox(product: Product) {
@@ -2849,10 +2976,15 @@ export function KaprukaGenieApp() {
         ),
       );
     } else if (data.extendedPreferences) {
-      setExtendedPreferences((current) => ({
-        ...current,
-        ...data.extendedPreferences,
-      }));
+      const { budget, giftType, occasion, recipient } = data.extendedPreferences;
+      setExtendedPreferences((current) =>
+        applyExtendedPreferenceUpdates(current, {
+          budget,
+          giftType,
+          occasion,
+          recipient,
+        }),
+      );
     }
 
   }
@@ -3009,6 +3141,14 @@ export function KaprukaGenieApp() {
       : "Continue without context";
   }
 
+  function getPreferenceDraftFromProfile(nextProfile: ShoppingProfile): ContextDraft {
+    return getContextDraftFromProfile(nextProfile);
+  }
+
+  function buildPreferenceMessage(nextProfile: ShoppingProfile) {
+    return buildContextSummary(getPreferenceDraftFromProfile(nextProfile));
+  }
+
   async function analyzeFirstMessage(content: string) {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 28000);
@@ -3094,6 +3234,7 @@ export function KaprukaGenieApp() {
     request: string,
     requestProfile: ShoppingProfile,
     requestDraft = contextDraft,
+    requestExtendedPreferences = extendedPreferences,
   ) {
     setConversationStage("ready");
     setChips(starterChips);
@@ -3107,7 +3248,7 @@ export function KaprukaGenieApp() {
       true,
       request,
       true,
-      getExtendedPreferencesFromProfile(requestProfile),
+      requestExtendedPreferences,
     );
 
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
@@ -3139,7 +3280,10 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    appendAssistantMessage(getCommerceReply(commerceData));
+    appendAssistantMessageForReplyCount(
+      getCommerceReply(commerceData),
+      requestExtendedPreferences,
+    );
     setStatus("Groq reply complete. Kapruka MCP commerce panels updated.");
   }
 
@@ -3168,8 +3312,39 @@ export function KaprukaGenieApp() {
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
       const nextDraft = getContextDraftFromProfile(nextProfile);
       setProfile(nextProfile);
+      setExtendedPreferences((current) =>
+        syncExtendedPreferencesWithProfile(current, nextProfile),
+      );
       setContextDraft(nextDraft);
-      await answerWithCollectedContext(content, nextProfile, nextDraft);
+      await answerWithCollectedContext(
+        content,
+        nextProfile,
+        nextDraft,
+        syncExtendedPreferencesWithProfile(extendedPreferences, nextProfile),
+      );
+      return;
+    }
+
+    const hasDetectedShoppingPreferences = Boolean(
+      nextProfile.budget ||
+        nextProfile.category ||
+        nextProfile.occasion ||
+        nextProfile.recipient,
+    );
+
+    if (hasDetectedShoppingPreferences) {
+      setProfile(nextProfile);
+      const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+        extendedPreferences,
+        nextProfile,
+      );
+      setExtendedPreferences(nextExtendedPreferences);
+      await handleReadyMessage(
+        content,
+        nextProfile,
+        nextExtendedPreferences,
+        true,
+      );
       return;
     }
 
@@ -3204,7 +3379,11 @@ export function KaprukaGenieApp() {
     ];
 
     setProfile(nextProfile);
-    setExtendedPreferences(getExtendedPreferencesFromProfile(nextProfile));
+    const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+      extendedPreferences,
+      nextProfile,
+    );
+    setExtendedPreferences(nextExtendedPreferences);
     setMessages(nextMessages);
     setIsSending(true);
     setActivityMessage(text.processing);
@@ -3213,6 +3392,8 @@ export function KaprukaGenieApp() {
       await answerWithCollectedContext(
         pendingUserRequest || contextMessage,
         nextProfile,
+        contextDraft,
+        nextExtendedPreferences,
       );
     } catch (error) {
       if (
@@ -3230,12 +3411,71 @@ export function KaprukaGenieApp() {
     }
   }
 
-  async function handleReadyMessage(content: string) {
+  async function handleReadyMessage(
+    content: string,
+    profileOverride = profile,
+    extendedPreferencesOverride = extendedPreferences,
+    enforceReplyCount = false,
+  ) {
     setStatus("Groq is answering. Kapruka MCP is searching products.");
-    const commerceData = await runCommerce(content);
+    const commerceData = await runCommerce(
+      content,
+      activeMode,
+      profileOverride,
+      true,
+      content,
+      false,
+      extendedPreferencesOverride,
+    );
 
-    appendAssistantMessage(getCommerceReply(commerceData));
+    if (enforceReplyCount) {
+      appendAssistantMessageForReplyCount(
+        getCommerceReply(commerceData),
+        extendedPreferencesOverride,
+      );
+    } else {
+      appendAssistantMessage(getCommerceReply(commerceData));
+    }
     setStatus("Groq chat complete. Kapruka MCP commerce panels updated.");
+  }
+
+  async function handleSidebarPreferenceSubmit() {
+    if (isSending) {
+      return;
+    }
+
+    const preferenceMessage = buildPreferenceMessage(profile);
+    if (preferenceMessage === "Continue without context") {
+      setStatus("Choose at least one preference before sending.");
+      return;
+    }
+
+    const nextMessages: ChatMessage[] = [
+      ...messages,
+      { role: "user", content: preferenceMessage },
+    ];
+
+    setMessages(nextMessages);
+    playChatSound("send");
+    setPendingUserRequest(preferenceMessage);
+    setIsSending(true);
+    setActivityMessage(text.processing);
+
+    try {
+      await handleReadyMessage(
+        preferenceMessage,
+        profile,
+        extendedPreferences,
+        true,
+      );
+    } catch (error) {
+      if (!addRetryFailure(error, preferenceMessage)) {
+        setStatus(getErrorMessage(error));
+      }
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
   }
 
   async function handleGuidedCustomMessage(content: string) {
@@ -3458,8 +3698,9 @@ export function KaprukaGenieApp() {
       if (starterGiftType) {
         const nextProfile = { ...profile, category: starterGiftType };
         const nextExtendedPreferences = {
-          ...extendedPreferences,
-          giftType: starterGiftType,
+          ...applyExtendedPreferenceUpdates(extendedPreferences, {
+            giftType: starterGiftType,
+          }),
         };
         setProfile(nextProfile);
         setExtendedPreferences(nextExtendedPreferences);
@@ -4766,6 +5007,22 @@ export function KaprukaGenieApp() {
                   </select>
                 </label>
               </div>
+              <button
+                type="button"
+                disabled={
+                  isSending ||
+                  !(
+                    profile.budget ||
+                    profile.recipient ||
+                    profile.occasion ||
+                    profile.category
+                  )
+                }
+                onClick={() => void handleSidebarPreferenceSubmit()}
+                className="mt-4 h-11 w-full rounded-[14px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {isSending ? text.sendingContext : text.sendContext}
+              </button>
             </div>
           </aside>
 
@@ -4964,8 +5221,8 @@ export function KaprukaGenieApp() {
                       <p className="mt-1 font-mono text-[11px] font-bold text-[#8a8299]">
                         ID: {product.id}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-[#675f79]">
-                        {fitReasons[product.id] ?? product.description}
+                      <p className="mt-2 h-[60px] overflow-hidden text-xs leading-5 text-[#675f79]">
+                        {product.description}
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="font-black text-[#3f246d]">

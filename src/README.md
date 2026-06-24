@@ -78,12 +78,6 @@ All suggested product cards are filtered against the active preset or custom
 budget before they reach the interface. Smart Shopping includes a working
 `Suggest more` chip that rotates or reloads additional budget-matched products.
 
-The app also maintains hidden extended preferences for budget, recipient,
-occasion, and gift type. They start from the visible selections and accumulate
-more specific details from later messages without changing the visible presets.
-Product searches use only these extended values; for example, visible `Cakes`
-can remain selected while the hidden search gift type becomes `chocolate cakes`.
-
 The shopping app now keeps provider routing inside the main experience without a separate admin dashboard.
 Hugging Face through Novita generates Sinhala and Singlish shopping-chat replies;
 Groq generates English shopping-chat replies. Gift messages continue to use
