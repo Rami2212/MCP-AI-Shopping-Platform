@@ -218,17 +218,17 @@ type GiftMessagePreferences = {
 
 const fallbackResponse: CommerceResponse = {
   analytics: {
-    buyBoxHealth: "Kapruka MCP ready",
+    buyBoxHealth: "Kapruka ready",
     conversionSignal: "Waiting for a catalog match",
-    nextBestAction: "Search the live Kapruka catalog",
-    risk: "Live catalog results may change",
+    nextBestAction: "Search the catalog",
+    risk: "Catalog results may change",
   },
   chips: [],
   eventPlan: [],
   giftMessage: "",
   mode: "Smart Shopping",
   recommendations: [],
-  reply: "I checked the live Kapruka MCP catalog.",
+  reply: "I checked the catalog.",
   tracking: "",
 };
 
@@ -1427,7 +1427,7 @@ function fallbackRecommendations(products: Product[]) {
   return products.slice(0, 3).map((product, index) => ({
     id: product.id,
     fitScore: 92 - index * 4,
-    reason: "Matched by Kapruka MCP live product search.",
+    reason: "Matched by Kapruka product search.",
   }));
 }
 
@@ -1456,14 +1456,14 @@ function getBudgetSearchReply(search: ProductSearchResult, productCount: number)
   const productLabel = productCount === 1 ? "product" : "products";
 
   if (search.exactBudgetMatched) {
-    return `I found ${productCount} ${productLabel} in ${requestedBudgetLabel}. Prices are in LKR.`;
+    return `I found some ${productLabel} in ${requestedBudgetLabel}`;
   }
 
   if (search.usedNearbyBudgetFallback && productCount > 0) {
-    return `No products match in ${requestedBudgetLabel}. I'll show related gifts around ${search.nearbyBudgetLabel ?? "that price"} instead. Prices are in LKR.`;
+    return `No products match in ${requestedBudgetLabel}. I'll show related gifts around ${search.nearbyBudgetLabel ?? "that price"} instead.`;
   }
 
-  return `No products match in ${requestedBudgetLabel}, and I could not find nearby LKR-priced products for this search.`;
+  return `No products match in ${requestedBudgetLabel}, and I could not find nearby products for this search.`;
 }
 
 async function searchKaprukaProducts(
@@ -2144,8 +2144,8 @@ export async function POST(request: Request) {
         mode,
         products: [],
         reply: order.checkout_url
-          ? "Kapruka MCP created a guest-checkout link."
-          : (order.result ?? "Kapruka MCP returned checkout details."),
+          ? "Kapruka created a guest-checkout link."
+          : (order.result ?? "Kapruka returned checkout details."),
       });
     }
 
@@ -2333,7 +2333,7 @@ export async function POST(request: Request) {
         mode,
         products: products.slice(0, 3),
         recommendations,
-        reply: "Kapruka MCP loaded live starter products.",
+        reply: "Kapruka loaded products.",
       });
     }
 
@@ -2404,7 +2404,7 @@ export async function POST(request: Request) {
           buyBoxHealth: "No live products found",
           conversionSignal: "Search needs refinement",
           nextBestAction: "Try another specific keyword",
-          risk: "Kapruka MCP returned no purchasable products",
+          risk: "Kapruka returned no purchasable products",
         },
         chips: [],
         delivery,
@@ -2413,7 +2413,7 @@ export async function POST(request: Request) {
         reply:
           productSearch && hasBudgetFilter(productSearch.budgetFilter)
             ? getBudgetSearchReply(productSearch, 0)
-            : `Kapruka MCP did not find products for "${searchQuery}".`,
+            : `Kapruka did not find products for "${searchQuery}".`,
       });
     }
 
@@ -2492,7 +2492,7 @@ export async function POST(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Kapruka MCP commerce request failed.",
+            : "Kapruka commerce request failed.",
       },
       { status: 502 },
     );
