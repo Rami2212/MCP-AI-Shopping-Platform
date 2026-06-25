@@ -1986,13 +1986,10 @@ async function getGroqCommerce(
     },
   });
   const { response } = await groqCommercePromise;
-  const directReply =
-    language === "English"
-      ? await Promise.race([
-          directReplyPromise,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
-        ])
-      : await directReplyPromise;
+  const directReply = await Promise.race([
+    directReplyPromise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 200)),
+  ]);
 
   if (!response.ok) {
     return {

@@ -2,7 +2,7 @@
 
 Kapruka Genie is a hosted-AI conversational commerce app styled from `Doc/sample.html` and based on `Doc/Overview.docx`.
 
-- Main shopping chat replies: Novita-hosted Gemma, with the existing Groq reply as an automatic fallback
+- Main shopping chat replies: Hugging Face via Novita, with the existing Groq reply as an automatic fallback
 - First-message context analysis: Groq processing model
 - Image shopping and voice transcription: Groq vision and STT APIs
 - Assistant read-aloud: browser speech synthesis (no additional AI model)
@@ -38,7 +38,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Default Models
 
 ```dotenv
-HF_NOVITA_REPLY_MODEL=google/gemma-4-31B-it:novita
+HF_NOVITA_REPLY_MODEL=Qwen/Qwen2.5-72B-Instruct:novita
 HF_NOVITA_REPLY_TIMEOUT_MS=4500
 GROQ_REPLY_MODEL=qwen/qwen3-32b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
@@ -64,8 +64,8 @@ Each model attempt and the complete retry chain are time-limited. Text requests
 can try the configured backup followed by built-in 8B, Qwen, and GPT-OSS
 fallbacks. Vision uses a separate vision-capable backup model.
 
-Sinhala and Singlish shopping-chat replies use Hugging Face Gemma routed through
-Novita. English shopping-chat replies use Groq. Sinhala and Singlish gift
+Sinhala and Singlish shopping-chat replies use Hugging Face Qwen2.5 72B Instruct
+routed through Novita. English shopping-chat replies use Groq. Sinhala and Singlish gift
 messages also use Novita first, while English gift messages use Groq directly.
 If a Novita request is rate-limited, unavailable, times out, or returns an empty
 reply, the language-specific Groq response is used automatically. Ranking,
