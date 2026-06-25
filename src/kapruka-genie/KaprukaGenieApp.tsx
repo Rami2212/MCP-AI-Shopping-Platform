@@ -1568,6 +1568,7 @@ export function KaprukaGenieApp() {
   const [isCompareSubmitting, setIsCompareSubmitting] = useState(false);
   const [isTrackingSubmitting, setIsTrackingSubmitting] = useState(false);
   const [isCheckoutCreating, setIsCheckoutCreating] = useState(false);
+  const [checkoutWarning, setCheckoutWarning] = useState("");
   const [giftMessagePreferences, setGiftMessagePreferences] =
     useState<GiftMessagePreferences>({
       language: "English",
@@ -1787,18 +1788,18 @@ export function KaprukaGenieApp() {
 
   function getRetryFailureReply() {
     if (language === "Sinhala") {
-      return "ඉල්ලීමට නියමිත වේලාව තුළ පිළිතුරක් ලැබුණේ නැහැ. නැවත උත්සාහ කරන්න.";
+      return "Model quota සීමාව ඉවර වෙලා. නැවත උත්සාහ කරන්න, නැත්නම් English වලට මාරු වෙන්න.";
     }
 
     if (language === "Singlish") {
-      return "Request eka time out una. Ayeth try karanna.";
+      return "Model quota limit eka iwara wela. Ayeth try karanna nathnam English walata maru wenna.";
     }
 
     if (language === "Tanglish") {
-      return "Request timeout aayiduchu. Innum oru thadava try pannunga.";
+      return "Model quota limit reach aayiduchu. Retry pannunga illenna English ku maathunga.";
     }
 
-    return "The request timed out. Please try again.";
+    return "Model quota limit reached. Please try again or switch to English.";
   }
 
   function addRetryFailure(
@@ -1829,6 +1830,26 @@ export function KaprukaGenieApp() {
     if (language === "Singlish") return "Ayeth try karanna";
     if (language === "Tanglish") return "Retry pannunga";
     return "Try again";
+  }
+
+  function getSwitchToEnglishLabel() {
+    if (language === "Sinhala") return "English walata maru wenna";
+    if (language === "Singlish") return "English walata maru wenna";
+    if (language === "Tanglish") return "English ku maathunga";
+    return "Switch to English";
+  }
+
+  function getEmptyCartWarning(selectedLanguage: Language = language) {
+    if (selectedLanguage === "Sinhala") {
+      return "Create Order Link click karanna kalin cart ekata item ekak hari add karanna.";
+    }
+    if (selectedLanguage === "Singlish") {
+      return "Create Order Link click karanna kalin cart ekata item ekak add karanna.";
+    }
+    if (selectedLanguage === "Tanglish") {
+      return "Create Order Link click pannurathukku munnaadi cart ku oru item add pannunga.";
+    }
+    return "Please add at least one item to the cart before creating the order link.";
   }
 
   function getParticipantCount(draft: ContextDraft) {
@@ -2015,6 +2036,9 @@ export function KaprukaGenieApp() {
 
   function handleLanguageChange(nextLanguage: Language) {
     setLanguage(nextLanguage);
+    setCheckoutWarning((current) =>
+      current ? getEmptyCartWarning(nextLanguage) : current,
+    );
     setMessages((current) => {
       const starterContent = new Set(
         Object.values(starterMessagesByLanguage).map(
@@ -2873,6 +2897,7 @@ export function KaprukaGenieApp() {
   }
 
   function addToBuyBox(product: Product) {
+    setCheckoutWarning("");
     setBuyBox((current) =>
       current.some((item) => item.id === product.id)
         ? current
@@ -3961,10 +3986,12 @@ export function KaprukaGenieApp() {
 
   function openCheckoutModal() {
     if (buyBox.length === 0) {
+      setCheckoutWarning(getEmptyCartWarning());
       setStatus("Add at least one live Kapruka product before checkout.");
       return;
     }
 
+    setCheckoutWarning("");
     setCheckoutUrl("");
     setIsCheckoutModalOpen(true);
   }
@@ -3977,11 +4004,13 @@ export function KaprukaGenieApp() {
     }
 
     if (buyBox.length === 0) {
+      setCheckoutWarning(getEmptyCartWarning());
       setStatus("Add at least one live Kapruka product before checkout.");
       return;
     }
 
     setIsCheckoutCreating(true);
+    setCheckoutWarning("");
     setCheckoutUrl("");
     setStatus("Kapruka MCP is creating a guest-checkout link.");
 
@@ -5123,14 +5152,26 @@ export function KaprukaGenieApp() {
                             {renderChatMessage(message.content)}
                             {message.retryReason === "timeout" &&
                             message.retryText ? (
-                              <button
-                                type="button"
-                                disabled={isSending}
-                                onClick={() => void handleRetryMessage(message)}
-                                className="mt-3 block rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {getTryAgainLabel()}
-                              </button>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isSending}
+                                  onClick={() => void handleRetryMessage(message)}
+                                  className="rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {getTryAgainLabel()}
+                                </button>
+                                {language !== "English" ? (
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() => handleLanguageChange("English")}
+                                    className="rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {getSwitchToEnglishLabel()}
+                                  </button>
+                                ) : null}
+                              </div>
                             ) : null}
                           </>
                         )}
@@ -5507,6 +5548,11 @@ export function KaprukaGenieApp() {
               >
                 {text.createOrderLink}
               </button>
+              {checkoutWarning ? (
+                <p className="mt-2 text-xs font-semibold text-[#ffe082]">
+                  {checkoutWarning}
+                </p>
+              ) : null}
             </div>
             </div>
 
