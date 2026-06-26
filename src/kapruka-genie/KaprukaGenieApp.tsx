@@ -93,6 +93,14 @@ type CommerceResponse = {
   tracking?: string;
 };
 
+function getCheckoutResponseMessage(data: CommerceResponse) {
+  return (
+    data.checkout?.result ??
+    data.reply ??
+    "Kapruka returned checkout details without a checkout link."
+  );
+}
+
 type CompareRow = {
   product: Product;
   suggestion: string;
@@ -1360,6 +1368,23 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
 }
 
+function getValidatedPhoneNumber(value: string) {
+  const trimmedValue = value.trim();
+  const normalizedDigits = trimmedValue.replace(/\D/g, "");
+
+  if (normalizedDigits.length < 7) {
+    return {
+      error: "Recipient phone number must have at least 7 digits.",
+      normalizedValue: trimmedValue,
+    };
+  }
+
+  return {
+    error: "",
+    normalizedValue: trimmedValue,
+  };
+}
+
 function getTaskForMode(mode: string) {
   if (mode.includes("Event")) return "eventPlan";
   if (mode.includes("Gift Box")) return "giftBox";
@@ -1490,6 +1515,8 @@ const rotatingActivityMessages: Record<Language, string[]> = {
 
 export function KaprukaGenieApp() {
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const compareTableTopScrollRef = useRef<HTMLDivElement | null>(null);
+  const compareTableBottomScrollRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -1512,7 +1539,6 @@ export function KaprukaGenieApp() {
   const [checkoutUrl, setCheckoutUrl] = useState("");
   const [checkoutDetails, setCheckoutDetails] = useState({
     address: "",
-    instructions: "",
     locationType: "",
     recipientName: "",
     recipientPhone: "",
@@ -1579,6 +1605,7 @@ export function KaprukaGenieApp() {
   const [isGiftMessageGenerating, setIsGiftMessageGenerating] = useState(false);
   const [isIntroPanelVisible, setIsIntroPanelVisible] = useState(false);
   const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -2218,7 +2245,7 @@ export function KaprukaGenieApp() {
                     first: event.target.value,
                   }))
                 }
-                className="h-12 rounded-[14px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                className="h-12 rounded-[14px] border border-[#e8e2f2] px-3 text-base text-[#161226] outline-none"
                 placeholder="Enter product ID"
               />
             </label>
@@ -2232,7 +2259,7 @@ export function KaprukaGenieApp() {
                     second: event.target.value,
                   }))
                 }
-                className="h-12 rounded-[14px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                className="h-12 rounded-[14px] border border-[#e8e2f2] px-3 text-base text-[#161226] outline-none"
                 placeholder="Enter product ID"
               />
             </label>
@@ -2258,7 +2285,28 @@ export function KaprukaGenieApp() {
 
         {productOne && productTwo ? (
           <div className="overflow-hidden rounded-[18px] border border-[#e8e2f2] bg-white">
-            <div className="overflow-x-auto">
+            <div
+              ref={compareTableTopScrollRef}
+              className="overflow-x-scroll border-b border-[#f0e9fb] md:hidden"
+              onScroll={(event) => {
+                if (compareTableBottomScrollRef.current) {
+                  compareTableBottomScrollRef.current.scrollLeft =
+                    event.currentTarget.scrollLeft;
+                }
+              }}
+            >
+              <div className="h-4 min-w-[720px]" />
+            </div>
+            <div
+              ref={compareTableBottomScrollRef}
+              className="overflow-x-scroll pb-2"
+              onScroll={(event) => {
+                if (compareTableTopScrollRef.current) {
+                  compareTableTopScrollRef.current.scrollLeft =
+                    event.currentTarget.scrollLeft;
+                }
+              }}
+            >
               <table className="w-full min-w-[720px] border-collapse text-left text-sm">
                 <thead className="bg-[#f6f4fb] text-[#3f246d]">
                   <tr>
@@ -2356,9 +2404,9 @@ export function KaprukaGenieApp() {
 
   function renderGiftMessageTool() {
     return (
-      <div className="grid h-full min-h-0 grid-rows-[minmax(180px,1fr)_auto] gap-4">
-        <section className="min-h-0 rounded-[18px] border border-[#e8e2f2] bg-white p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="grid min-h-0 gap-4 md:h-full md:grid-rows-[minmax(180px,1fr)_auto]">
+        <section className="flex min-h-0 flex-col rounded-[18px] border border-[#e8e2f2] bg-white p-4">
+          <div className="mb-3 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-black text-[#3f246d]">
               Gift Message
             </h2>
@@ -2366,7 +2414,7 @@ export function KaprukaGenieApp() {
               type="button"
               onClick={() => void generateGiftMessage("")}
               disabled={isGiftMessageGenerating}
-              className="h-10 rounded-[12px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:opacity-50"
+              className="h-10 w-full rounded-[12px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:opacity-50 sm:w-auto"
             >
               {isGiftMessageGenerating ? "Generating..." : "Generate default"}
             </button>
@@ -2374,7 +2422,7 @@ export function KaprukaGenieApp() {
           <textarea
             value={giftMessage}
             onChange={(event) => setGiftMessage(event.target.value)}
-            className="h-[calc(100%-3.25rem)] min-h-[140px] w-full resize-none rounded-[14px] border border-[#e8e2f2] bg-[#fbf9ff] p-4 text-base leading-7 text-[#161226] outline-none"
+            className="min-h-[180px] w-full flex-1 resize-none rounded-[14px] border border-[#e8e2f2] bg-[#fbf9ff] p-4 text-base leading-7 text-[#161226] outline-none md:min-h-[140px]"
           />
         </section>
 
@@ -2466,6 +2514,16 @@ export function KaprukaGenieApp() {
   }
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobileViewport(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
+
+  useEffect(() => {
     if (!isSending) {
       return;
     }
@@ -2481,7 +2539,7 @@ export function KaprukaGenieApp() {
   }, [isSending, language]);
 
   useEffect(() => {
-    if (isFormToolMode) {
+    if (isFormToolMode || isMobileViewport) {
       return;
     }
 
@@ -2496,7 +2554,14 @@ export function KaprukaGenieApp() {
     });
 
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [activityMessage, chips, isFormToolMode, messages, recommendedProducts]);
+  }, [
+    activityMessage,
+    chips,
+    isFormToolMode,
+    isMobileViewport,
+    messages,
+    recommendedProducts,
+  ]);
 
   useEffect(() => {
     const today = getLocalDateString();
@@ -4009,6 +4074,16 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    const phoneValidation = getValidatedPhoneNumber(
+      checkoutDetails.recipientPhone,
+    );
+
+    if (phoneValidation.error) {
+      setCheckoutWarning(phoneValidation.error);
+      setStatus(phoneValidation.error);
+      return;
+    }
+
     setIsCheckoutCreating(true);
     setCheckoutWarning("");
     setCheckoutUrl("");
@@ -4024,6 +4099,7 @@ export function KaprukaGenieApp() {
           cartIds: buyBox.map((product) => product.id),
           checkout: {
             ...checkoutDetails,
+            recipientPhone: phoneValidation.normalizedValue,
             giftMessage,
           },
           language,
@@ -4042,9 +4118,18 @@ export function KaprukaGenieApp() {
       }
 
       applyCommerceResponse(data);
-      setStatus("Kapruka MCP checkout link created.");
+      if (data.checkout?.checkout_url) {
+        setStatus("Kapruka MCP checkout link created.");
+        setCheckoutWarning("");
+      } else {
+        const message = getCheckoutResponseMessage(data);
+        setCheckoutWarning(message);
+        setStatus(message);
+      }
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setCheckoutWarning(message);
+      setStatus(message);
     } finally {
       setIsCheckoutCreating(false);
     }
@@ -4381,7 +4466,7 @@ export function KaprukaGenieApp() {
                   type="button"
                   disabled={!isActive || isSending}
                   onClick={() => selectContextOption(field, contextDraft[field])}
-                  className="rounded-full border border-[#3f246d] bg-[#3f246d] px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-full border border-[#3f246d] bg-[#3f246d] px-2.5 py-1.5 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-50 sm:px-3 sm:py-2 sm:text-xs"
                 >
                   {getContextFieldLabel(field)}:{" "}
                   {getOptionLabel(contextDraft[field])}
@@ -4406,7 +4491,7 @@ export function KaprukaGenieApp() {
                       aria-pressed={false}
                       disabled={!isActive || isSending}
                       onClick={() => selectContextOption(field, option)}
-                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d] transition hover:border-[#3f246d] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-full border border-[#e8e2f2] bg-white px-3 py-1.5 text-xs font-black text-[#3f246d] transition hover:border-[#3f246d] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {getOptionLabel(option)}
                     </button>
@@ -4454,7 +4539,7 @@ export function KaprukaGenieApp() {
         />
       ) : null}
       <div
-        className={`fixed inset-x-0 top-0 z-50 h-[50vh] w-screen transition-transform duration-700 ease-out ${
+        className={`fixed inset-x-0 top-0 z-50 h-[75vh] w-screen transition-transform duration-700 ease-out md:h-[50vh] ${
           isIntroPanelVisible
             ? "translate-y-0"
             : "pointer-events-none -translate-y-full"
@@ -4705,14 +4790,19 @@ export function KaprukaGenieApp() {
                     {text.recipientPhone}
                     <input
                       required
+                      type="tel"
+                      inputMode="tel"
+                      minLength={7}
                       value={checkoutDetails.recipientPhone}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        setCheckoutWarning("");
                         setCheckoutDetails((current) => ({
                           ...current,
                           recipientPhone: event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                       className="h-11 rounded-[12px] border border-[#e8e2f2] px-3 text-[#161226] outline-none"
+                      placeholder="Enter at least 7 digits"
                     />
                   </label>
                   <label className="grid gap-1 text-sm font-bold text-[#675f79] md:col-span-2">
@@ -4789,7 +4879,7 @@ export function KaprukaGenieApp() {
                   <label className="grid gap-1 text-sm font-bold text-[#675f79]">
                     {text.senderName}
                     <input
-                      required
+                        required
                       value={checkoutDetails.senderName}
                       onChange={(event) =>
                         setCheckoutDetails((current) => ({
@@ -4801,20 +4891,6 @@ export function KaprukaGenieApp() {
                     />
                   </label>
                 </div>
-                <label className="grid gap-1 text-sm font-bold text-[#675f79]">
-                  Delivery instructions
-                  <textarea
-                    value={checkoutDetails.instructions}
-                    onChange={(event) =>
-                      setCheckoutDetails((current) => ({
-                        ...current,
-                        instructions: event.target.value,
-                      }))
-                    }
-                    rows={2}
-                    className="resize-none rounded-[12px] border border-[#e8e2f2] px-3 py-2 text-[#161226] outline-none"
-                  />
-                </label>
                 <label className="grid gap-1 text-sm font-bold text-[#675f79]">
                   {text.giftMessageLabel}
                   <textarea
@@ -4831,6 +4907,11 @@ export function KaprukaGenieApp() {
                 >
                   {isCheckoutCreating ? "Processing..." : text.createOrderLink}
                 </button>
+                {checkoutWarning ? (
+                  <p className="rounded-[12px] bg-[#fff5d5] px-3 py-2 text-sm font-semibold text-[#6f5200]">
+                    {checkoutWarning}
+                  </p>
+                ) : null}
               </form>
             )}
           </section>
@@ -5208,7 +5289,7 @@ export function KaprukaGenieApp() {
                       key={chip}
                       type="button"
                       onClick={() => handleChipClick(chip)}
-                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                      className="rounded-full border border-[#e8e2f2] bg-white px-3 py-1.5 text-xs font-black text-[#3f246d] sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {getChipLabel(chip)}
                     </button>
@@ -5245,61 +5326,68 @@ export function KaprukaGenieApp() {
                     {text.initialEmpty}
                   </div>
                 ) : null}
-                {visibleProducts.map((product) => (
-                  <article
-                    key={product.id}
-                    className="flex h-full flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
-                  >
-                    <div className="relative h-44 overflow-hidden bg-[#eee9f5]">
-                      <Image
-                        src={product.imageUrl}
-                        alt={product.name}
-                        fill
-                        unoptimized
-                        sizes="(min-width: 768px) 33vw, 100vw"
-                        className="object-cover"
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-black">{product.name}</h3>
-                        <span className="rounded-lg bg-[#f6f4fb] px-2 py-1 text-[11px] font-black text-[#3f246d]">
-                          {product.category}
-                        </span>
+                {visibleProducts.map((product) => {
+                  const isProductInCart = buyBox.some(
+                    (item) => item.id === product.id,
+                  );
+
+                  return (
+                    <article
+                      key={product.id}
+                      className="flex h-full flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                    >
+                      <div className="relative h-44 overflow-hidden bg-[#eee9f5]">
+                        <Image
+                          src={product.imageUrl}
+                          alt={product.name}
+                          fill
+                          unoptimized
+                          sizes="(min-width: 768px) 33vw, 100vw"
+                          className="object-cover"
+                        />
                       </div>
-                      <p className="mt-1 font-mono text-[11px] font-bold text-[#8a8299]">
-                        ID: {product.id}
-                      </p>
-                      <p className="mt-2 h-[60px] overflow-hidden text-xs leading-5 text-[#675f79]">
-                        {product.description}
-                      </p>
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        <span className="font-black text-[#3f246d]">
-                          {formatPrice(product.price, product.currency)}
-                        </span>
-                        <span className="text-xs font-bold text-[#675f79]">
-                          {product.stockLabel}
-                        </span>
+                      <div className="flex flex-1 flex-col p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="text-sm font-black">{product.name}</h3>
+                          <span className="rounded-lg bg-[#f6f4fb] px-2 py-1 text-[11px] font-black text-[#3f246d]">
+                            {product.category}
+                          </span>
+                        </div>
+                        <p className="mt-1 font-mono text-[11px] font-bold text-[#8a8299]">
+                          ID: {product.id}
+                        </p>
+                        <p className="mt-2 h-[60px] overflow-hidden text-xs leading-5 text-[#675f79]">
+                          {product.description}
+                        </p>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="font-black text-[#3f246d]">
+                            {formatPrice(product.price, product.currency)}
+                          </span>
+                          <span className="text-xs font-bold text-[#675f79]">
+                            {product.stockLabel}
+                          </span>
+                        </div>
+                        <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-3">
+                          <button
+                            type="button"
+                            disabled={isProductInCart}
+                            onClick={() => addToBuyBox(product)}
+                            className="h-10 rounded-[10px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e] disabled:cursor-default disabled:opacity-60"
+                          >
+                            {isProductInCart ? "Added to Cart" : text.addToBuyBox}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProduct(product)}
+                            className="grid h-10 place-items-center rounded-[10px] border border-[#e8e2f2] px-3 text-sm font-black text-[#3f246d]"
+                          >
+                            {text.productView}
+                          </button>
+                        </div>
                       </div>
-                      <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-3">
-                        <button
-                          type="button"
-                          onClick={() => addToBuyBox(product)}
-                          className="h-10 rounded-[10px] bg-[#ffdf00] text-sm font-black text-[#1a0f2e]"
-                        >
-                          {text.addToBuyBox}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedProduct(product)}
-                          className="grid h-10 place-items-center rounded-[10px] border border-[#e8e2f2] px-3 text-sm font-black text-[#3f246d]"
-                        >
-                          {text.productView}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </div>
               ) : null}
               {isGuidedMode ? (
@@ -5309,7 +5397,7 @@ export function KaprukaGenieApp() {
                       key={chip}
                       type="button"
                       onClick={() => handleChipClick(chip)}
-                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                      className="rounded-full border border-[#e8e2f2] bg-white px-3 py-1.5 text-xs font-black text-[#3f246d] sm:px-4 sm:py-2 sm:text-sm"
                     >
                       {getChipLabel(chip)}
                     </button>

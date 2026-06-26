@@ -133,6 +133,8 @@ type KaprukaDeliveryResponse = {
 
 type KaprukaOrderResponse = {
   checkout_url?: string;
+  checkoutUrl?: string;
+  click_to_pay_url?: string;
   expires_at?: string;
   order_ref?: string;
   result?: string;
@@ -144,6 +146,33 @@ type KaprukaOrderResponse = {
     items_total?: number;
   };
 };
+
+function getFirstUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.match(/https?:\/\/[^\s"'`<>()]+/i)?.[0];
+}
+
+function normalizeCheckoutOrderResponse(
+  order: KaprukaOrderResponse | null | undefined,
+) {
+  if (!order) {
+    return { result: "" } as KaprukaOrderResponse;
+  }
+
+  const checkoutUrl =
+    order.checkout_url ??
+    order.checkoutUrl ??
+    order.click_to_pay_url ??
+    getFirstUrl(order.result);
+
+  return {
+    ...order,
+    checkout_url: checkoutUrl,
+  };
+}
 
 const COMMON_GIFT_SEARCH_TERMS = ["chocolate", "cake", "flowers"];
 const COMMON_GIFT_SEARCH_QUERY = "__common_gifts__";
@@ -223,7 +252,6 @@ type CommerceResponse = {
 type CheckoutDetails = {
   address?: string;
   giftMessage?: string;
-  instructions?: string;
   locationType?: string;
   recipientName?: string;
   recipientPhone?: string;
@@ -496,7 +524,6 @@ function parseCheckoutDetails(value: unknown): CheckoutDetails {
   return {
     address: getString(record, "address") ?? undefined,
     giftMessage: getString(record, "giftMessage") ?? undefined,
-    instructions: getString(record, "instructions") ?? undefined,
     locationType: getString(record, "locationType") ?? undefined,
     recipientName: getString(record, "recipientName") ?? undefined,
     recipientPhone: getString(record, "recipientPhone") ?? undefined,
@@ -1769,7 +1796,7 @@ async function createCheckoutOrder(
 ) {
   const city = await getCanonicalCity(mcp, profile.city ?? "");
 
-  return mcp.callTool<KaprukaOrderResponse>("kapruka_create_order", {
+  const order = await mcp.callTool<KaprukaOrderResponse>("kapruka_create_order", {
     cart: cartIds.map((productId) => ({
       product_id: productId,
       quantity: 1,
@@ -1779,7 +1806,6 @@ async function createCheckoutOrder(
       address: checkout.address,
       city,
       date: profile.date,
-      instructions: checkout.instructions || null,
       location_type: toKaprukaLocationType(checkout.locationType),
     },
     gift_message: checkout.giftMessage || null,
@@ -1793,6 +1819,8 @@ async function createCheckoutOrder(
       name: checkout.senderName,
     },
   });
+
+  return normalizeCheckoutOrderResponse(order);
 }
 
 function getOrderNumber(query: string) {
