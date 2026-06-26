@@ -133,6 +133,8 @@ type KaprukaDeliveryResponse = {
 
 type KaprukaOrderResponse = {
   checkout_url?: string;
+  checkoutUrl?: string;
+  click_to_pay_url?: string;
   expires_at?: string;
   order_ref?: string;
   result?: string;
@@ -144,6 +146,33 @@ type KaprukaOrderResponse = {
     items_total?: number;
   };
 };
+
+function getFirstUrl(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+
+  return value.match(/https?:\/\/[^\s"'`<>()]+/i)?.[0];
+}
+
+function normalizeCheckoutOrderResponse(
+  order: KaprukaOrderResponse | null | undefined,
+) {
+  if (!order) {
+    return { result: "" } as KaprukaOrderResponse;
+  }
+
+  const checkoutUrl =
+    order.checkout_url ??
+    order.checkoutUrl ??
+    order.click_to_pay_url ??
+    getFirstUrl(order.result);
+
+  return {
+    ...order,
+    checkout_url: checkoutUrl,
+  };
+}
 
 const COMMON_GIFT_SEARCH_TERMS = ["chocolate", "cake", "flowers"];
 const COMMON_GIFT_SEARCH_QUERY = "__common_gifts__";
@@ -1769,7 +1798,7 @@ async function createCheckoutOrder(
 ) {
   const city = await getCanonicalCity(mcp, profile.city ?? "");
 
-  return mcp.callTool<KaprukaOrderResponse>("kapruka_create_order", {
+  const order = await mcp.callTool<KaprukaOrderResponse>("kapruka_create_order", {
     cart: cartIds.map((productId) => ({
       product_id: productId,
       quantity: 1,
@@ -1793,6 +1822,8 @@ async function createCheckoutOrder(
       name: checkout.senderName,
     },
   });
+
+  return normalizeCheckoutOrderResponse(order);
 }
 
 function getOrderNumber(query: string) {

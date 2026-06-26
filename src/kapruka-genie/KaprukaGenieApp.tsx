@@ -93,6 +93,14 @@ type CommerceResponse = {
   tracking?: string;
 };
 
+function getCheckoutResponseMessage(data: CommerceResponse) {
+  return (
+    data.checkout?.result ??
+    data.reply ??
+    "Kapruka returned checkout details without a checkout link."
+  );
+}
+
 type CompareRow = {
   product: Product;
   suggestion: string;
@@ -4042,9 +4050,18 @@ export function KaprukaGenieApp() {
       }
 
       applyCommerceResponse(data);
-      setStatus("Kapruka MCP checkout link created.");
+      if (data.checkout?.checkout_url) {
+        setStatus("Kapruka MCP checkout link created.");
+        setCheckoutWarning("");
+      } else {
+        const message = getCheckoutResponseMessage(data);
+        setCheckoutWarning(message);
+        setStatus(message);
+      }
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      setCheckoutWarning(message);
+      setStatus(message);
     } finally {
       setIsCheckoutCreating(false);
     }
@@ -4789,7 +4806,7 @@ export function KaprukaGenieApp() {
                   <label className="grid gap-1 text-sm font-bold text-[#675f79]">
                     {text.senderName}
                     <input
-                      required
+                        required
                       value={checkoutDetails.senderName}
                       onChange={(event) =>
                         setCheckoutDetails((current) => ({
@@ -4831,6 +4848,11 @@ export function KaprukaGenieApp() {
                 >
                   {isCheckoutCreating ? "Processing..." : text.createOrderLink}
                 </button>
+                {checkoutWarning ? (
+                  <p className="rounded-[12px] bg-[#fff5d5] px-3 py-2 text-sm font-semibold text-[#6f5200]">
+                    {checkoutWarning}
+                  </p>
+                ) : null}
               </form>
             )}
           </section>
