@@ -252,7 +252,6 @@ type CommerceResponse = {
 type CheckoutDetails = {
   address?: string;
   giftMessage?: string;
-  instructions?: string;
   locationType?: string;
   recipientName?: string;
   recipientPhone?: string;
@@ -525,7 +524,6 @@ function parseCheckoutDetails(value: unknown): CheckoutDetails {
   return {
     address: getString(record, "address") ?? undefined,
     giftMessage: getString(record, "giftMessage") ?? undefined,
-    instructions: getString(record, "instructions") ?? undefined,
     locationType: getString(record, "locationType") ?? undefined,
     recipientName: getString(record, "recipientName") ?? undefined,
     recipientPhone: getString(record, "recipientPhone") ?? undefined,
@@ -1808,7 +1806,6 @@ async function createCheckoutOrder(
       address: checkout.address,
       city,
       date: profile.date,
-      instructions: checkout.instructions || null,
       location_type: toKaprukaLocationType(checkout.locationType),
     },
     gift_message: checkout.giftMessage || null,
