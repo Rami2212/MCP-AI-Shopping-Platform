@@ -1515,6 +1515,7 @@ const rotatingActivityMessages: Record<Language, string[]> = {
 
 export function KaprukaGenieApp() {
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const latestMessageRef = useRef<HTMLDivElement | null>(null);
   const compareTableTopScrollRef = useRef<HTMLDivElement | null>(null);
   const compareTableBottomScrollRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -1638,6 +1639,7 @@ export function KaprukaGenieApp() {
       message.role === "assistant" ? index : latestIndex,
     -1,
   );
+  const cartCount = buyBox.length;
   const readAloudTitle =
     language === "Sinhala"
       ? "අවසන් message එක කියවන්න"
@@ -1800,7 +1802,33 @@ export function KaprukaGenieApp() {
   }
 
   function getCommerceReply(data: CommerceResponse) {
-    return stripModelThinking(data.reply ?? "").trim();
+    const reply = stripModelThinking(data.reply ?? "").trim();
+
+    if (!reply) {
+      return reply;
+    }
+
+    if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
+      return `${getGuidedReplyIntro()} ${reply}`;
+    }
+
+    return reply;
+  }
+
+  function getGuidedReplyIntro() {
+    if (language === "Sinhala") {
+      return "මේවා තමයි ඔයාට ඕනෙ වෙන්න‌ේ.";
+    }
+
+    if (language === "Singlish") {
+      return "Meඅa thamai oyata ona wenne.";
+    }
+
+    if (language === "Tanglish") {
+      return "Idhu dhan neenga wanted pannadhu.";
+    }
+
+    return "This is what you need.";
   }
 
   function getRetryableFailureType(error: unknown) {
@@ -2562,6 +2590,29 @@ export function KaprukaGenieApp() {
     messages,
     recommendedProducts,
   ]);
+
+  useEffect(() => {
+    if (isFormToolMode || !isMobileViewport) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const container = chatScrollContainerRef.current;
+      const latestMessage = latestMessageRef.current;
+
+      if (!container || !latestMessage) {
+        return;
+      }
+
+      const nextTop = latestMessage.offsetTop - container.offsetTop;
+      container.scrollTo({
+        behavior: "smooth",
+        top: nextTop,
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [isFormToolMode, isMobileViewport, messages]);
 
   useEffect(() => {
     const today = getLocalDateString();
@@ -4963,6 +5014,9 @@ export function KaprukaGenieApp() {
             >
               <Icon name="cart" className="h-4 w-4" />
               {text.buyBox}
+              <span className="grid min-w-5 place-items-center rounded-full bg-[#3f246d] px-1.5 py-0.5 text-[11px] leading-none text-white">
+                {cartCount}
+              </span>
             </button>
             <button
               type="button"
@@ -5211,6 +5265,7 @@ export function KaprukaGenieApp() {
                   return (
                     <div
                       key={`${message.role}-${index}`}
+                      ref={index === messages.length - 1 ? latestMessageRef : null}
                       className={`flex min-w-0 items-end gap-2 ${
                         message.role === "user" ? "justify-end" : "justify-start"
                       }`}
@@ -5567,6 +5622,9 @@ export function KaprukaGenieApp() {
             <div className="flex items-center justify-between border-b border-[#e8e2f2] p-5 font-black">
               <span className="flex items-center gap-2">
                 {text.buyBox} <Icon name="cart" className="h-5 w-5" />
+                <span className="grid min-w-5 place-items-center rounded-full bg-[#3f246d] px-1.5 py-0.5 text-[11px] leading-none text-white">
+                  {cartCount}
+                </span>
               </span>
               <button
                 type="button"
