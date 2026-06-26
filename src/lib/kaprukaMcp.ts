@@ -2,6 +2,8 @@ import { asRecord, getString } from "@/lib/aiPayload";
 
 const DEFAULT_MCP_URL = "https://mcp.kapruka.com/mcp";
 const MCP_PROTOCOL_VERSION = "2025-03-26";
+const DEFAULT_MCP_REQUEST_TIMEOUT_MS = 4000;
+const MCP_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
 
 type McpMessage = {
   error?: {
@@ -28,8 +30,27 @@ export type KaprukaMcpClient = {
   callTool: <T>(toolName: string, params: Record<string, unknown>) => Promise<T>;
 };
 
+type McpSession = {
+  createdAt: number;
+  nextId: number;
+  sessionId: string;
+};
+
+let activeSession: McpSession | null = null;
+let sessionInitialization: Promise<McpSession> | null = null;
+
 function getMcpUrl() {
   return process.env.KAPRUKA_MCP_URL ?? DEFAULT_MCP_URL;
+}
+
+function getMcpRequestTimeoutMs() {
+  const configuredTimeout = Number(process.env.MCP_REQUEST_TIMEOUT_MS);
+
+  if (!Number.isFinite(configuredTimeout)) {
+    return DEFAULT_MCP_REQUEST_TIMEOUT_MS;
+  }
+
+  return Math.min(15000, Math.max(2000, Math.round(configuredTimeout)));
 }
 
 function getSseMessages(body: string) {
@@ -61,16 +82,32 @@ function parseMcpMessage(body: string, contentType: string | null): McpMessage {
 }
 
 async function postMcp(payload: unknown, sessionId?: string) {
-  const response = await fetch(getMcpUrl(), {
-    method: "POST",
-    headers: {
-      Accept: "application/json, text/event-stream",
-      "Content-Type": "application/json",
-      ...(sessionId ? { "mcp-session-id": sessionId } : {}),
-    },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeoutMs = getMcpRequestTimeoutMs();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+
+  try {
+    response = await fetch(getMcpUrl(), {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/event-stream",
+        "Content-Type": "application/json",
+        ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Kapruka MCP request timed out after ${timeoutMs} ms.`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const body = await response.text();
 
   if (!response.ok) {
@@ -133,10 +170,9 @@ function parseToolJson<T>(toolName: string, result: unknown): T {
   }
 }
 
-export async function createKaprukaMcpClient(): Promise<KaprukaMcpClient> {
-  let nextId = 1;
+async function initializeMcpSession(): Promise<McpSession> {
   const initialized = await postMcp({
-    id: nextId,
+    id: 1,
     jsonrpc: "2.0",
     method: "initialize",
     params: {
@@ -148,7 +184,6 @@ export async function createKaprukaMcpClient(): Promise<KaprukaMcpClient> {
       protocolVersion: MCP_PROTOCOL_VERSION,
     },
   });
-  nextId += 1;
 
   if (!initialized.sessionId) {
     throw new Error("Kapruka MCP did not return a session id.");
@@ -165,26 +200,100 @@ export async function createKaprukaMcpClient(): Promise<KaprukaMcpClient> {
   );
 
   return {
-    async callTool<T>(toolName: string, params: Record<string, unknown>) {
-      const response = await postMcp(
-        {
-          id: nextId,
-          jsonrpc: "2.0",
-          method: "tools/call",
-          params: {
-            arguments: {
-              params,
-            },
-            name: toolName,
-          },
-        },
-        sessionId,
-      );
-      nextId += 1;
-
-      return parseToolJson<T>(toolName, response.message.result);
-    },
+    createdAt: Date.now(),
+    nextId: 2,
+    sessionId,
   };
+}
+
+async function getMcpSession() {
+  if (
+    activeSession &&
+    Date.now() - activeSession.createdAt < MCP_SESSION_MAX_AGE_MS
+  ) {
+    return activeSession;
+  }
+
+  if (!sessionInitialization) {
+    sessionInitialization = initializeMcpSession()
+      .then((session) => {
+        activeSession = session;
+        return session;
+      })
+      .finally(() => {
+        sessionInitialization = null;
+      });
+  }
+
+  return sessionInitialization;
+}
+
+function isExpiredSessionError(error: unknown) {
+  return (
+    error instanceof Error &&
+    /session.{0,30}(?:expired|invalid|not found)|(?:expired|invalid).{0,30}session|not initialized/i.test(
+      error.message,
+    )
+  );
+}
+
+function canRetryTool(toolName: string) {
+  return toolName !== "kapruka_create_order";
+}
+
+async function callToolWithSession<T>(
+  toolName: string,
+  params: Record<string, unknown>,
+  allowSessionRetry = true,
+) {
+  const session = await getMcpSession();
+  const requestId = session.nextId;
+  session.nextId += 1;
+
+  try {
+    const response = await postMcp(
+      {
+        id: requestId,
+        jsonrpc: "2.0",
+        method: "tools/call",
+        params: {
+          arguments: {
+            params,
+          },
+          name: toolName,
+        },
+      },
+      session.sessionId,
+    );
+
+    return parseToolJson<T>(toolName, response.message.result);
+  } catch (error) {
+    if (activeSession === session && isExpiredSessionError(error)) {
+      activeSession = null;
+    }
+
+    if (
+      allowSessionRetry &&
+      canRetryTool(toolName) &&
+      isExpiredSessionError(error)
+    ) {
+      return callToolWithSession<T>(toolName, params, false);
+    }
+
+    throw error;
+  }
+}
+
+const sharedMcpClient: KaprukaMcpClient = {
+  callTool<T>(toolName: string, params: Record<string, unknown>) {
+    return callToolWithSession<T>(toolName, params);
+  },
+};
+
+export async function createKaprukaMcpClient(): Promise<KaprukaMcpClient> {
+  await getMcpSession();
+
+  return sharedMcpClient;
 }
 
 export function getMcpString(

@@ -1,0 +1,46 @@
+KAPRUKA GENIE - AI MODELS
+Checked: 2026-06-25
+
+Default summary
+
+- No model overrides are currently set in `src/.env.local`, so these code defaults are active.
+- Sinhala and Singlish direct chat replies use Hugging Face via Novita with `Qwen/Qwen2.5-72B-Instruct:novita`.
+- English direct chat replies use Groq.
+- Most analysis, ranking, comparison, and tracking tasks use Groq `llama-3.3-70b-versatile`.
+- Voice transcription uses Groq `whisper-large-v3-turbo`.
+- Image analysis uses Groq `qwen/qwen3.6-27b`.
+
+Active defaults
+
+- `HF_NOVITA_REPLY_MODEL=Qwen/Qwen2.5-72B-Instruct:novita`
+- `GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile`
+- `GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile`
+- `GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile`
+- `GROQ_REPLY_MODEL=qwen/qwen3-32b`
+- `GROQ_ENGLISH_CHAT_MODEL=openai/gpt-oss-120b`
+- `GROQ_SINHALA_CHAT_MODEL=openai/gpt-oss-120b`
+- `GROQ_SINGLISH_CHAT_MODEL=llama-3.3-70b-versatile`
+- `GROQ_GIFT_MESSAGE_MODEL=llama-3.3-70b-versatile`
+- `GROQ_SINHALA_GIFT_MESSAGE_MODEL=openai/gpt-oss-120b`
+- `GROQ_SINGLISH_GIFT_MESSAGE_MODEL=llama-3.3-70b-versatile`
+- `GROQ_VISION_MODEL=qwen/qwen3.6-27b`
+
+Where each model is used
+
+- `/api/ai/commerce`
+  Direct reply for Sinhala and Singlish: Hugging Face via Novita, with Groq fallback
+  Message analysis, ranking, comparison, tracking: Groq
+- `/api/ai/context-analysis`
+  First-message preference extraction: Groq
+- `/api/ai/chatbot`
+  Standalone test chatbot: Groq by default, Hugging Face via Novita only for Tanglish
+- `/api/ai/image-analysis`
+  Image understanding: Groq vision
+- `/api/ai/voice-messages`
+  Speech-to-text: Groq Whisper
+
+Fallback notes
+
+- If the Hugging Face/Novita reply fails, the app uses the Groq reply already produced by the commerce flow.
+- Groq text calls automatically retry on temporary failures using the shared fallback helper.
+- Product search, delivery, checkout, tracking lookup, read-aloud, reply chips, and analytics do not need an AI model.

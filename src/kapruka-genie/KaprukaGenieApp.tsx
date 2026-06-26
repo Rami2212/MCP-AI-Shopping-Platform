@@ -18,6 +18,9 @@ import { formatPrice, Product } from "@/lib/productCatalog";
 type ChatMessage = {
   role: "user" | "assistant";
   content: string;
+  retryContext?: boolean;
+  retryReason?: "timeout";
+  retryText?: string;
   variant?: "context-panel";
 };
 
@@ -30,7 +33,9 @@ type IconName =
   | "heart"
   | "menu"
   | "mic"
+  | "plus"
   | "search"
+  | "send"
   | "settings"
   | "speaker"
   | "sparkles"
@@ -46,8 +51,16 @@ type CommerceResponse = {
     risk?: string;
   };
   chips?: string[];
+  detectedLanguage?: Language;
   eventPlan?: string[];
+  extendedPreferences?: ExtendedPreferences;
   giftMessage?: string;
+  preferences?: {
+    budget: string;
+    category: string;
+    occasion: string;
+    recipient: string;
+  };
   products?: Product[];
   recommendations?: Array<{
     id: string;
@@ -100,6 +113,8 @@ type GiftMessagePreferences = {
 
 type ImageResponse = {
   error?: string;
+  fallback?: boolean;
+  model?: string;
   productHints?: string[];
   searchQuery?: string;
   summary?: string;
@@ -108,6 +123,8 @@ type ImageResponse = {
 
 type VoiceResponse = {
   error?: string;
+  language?: "en";
+  retry?: boolean;
   transcript?: string;
 };
 
@@ -125,7 +142,7 @@ type ContextField =
 
 type ContextDraft = Record<ContextField, string>;
 
-type Language = "English" | "Sinhala" | "Singlish";
+type Language = "English" | "Sinhala" | "Singlish" | "Tanglish";
 
 type ShoppingProfile = {
   budget: string;
@@ -137,8 +154,19 @@ type ShoppingProfile = {
   recipient: string;
 };
 
+type ExtendedPreferences = {
+  budget: string;
+  giftType: string;
+  occasion: string;
+  recipient: string;
+  lastRepliedCount: number;
+  replyCount: number;
+};
+
 type ContextAnalysisResponse = {
   budget?: string | null;
+  category?: string | null;
+  detectedLanguage?: Language;
   error?: string;
   missingFields?: RequiredField[];
   occasion?: string | null;
@@ -149,11 +177,15 @@ type StoredChatState = {
   chips: string[];
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
+  extendedPreferences?: ExtendedPreferences;
+  fitReasons?: Record<string, string>;
   input: string;
   language: Language;
   messages: ChatMessage[];
   pendingUserRequest: string;
   profile: ShoppingProfile;
+  buyBox?: Product[];
+  recommendedProducts?: Product[];
   activeMode?: string;
   modeSessions?: Record<string, ModeSession>;
 };
@@ -162,10 +194,13 @@ type ModeSession = {
   chips: string[];
   contextDraft: ContextDraft;
   conversationStage: "first-message" | "collecting-context" | "ready";
+  extendedPreferences?: ExtendedPreferences;
+  fitReasons?: Record<string, string>;
   input: string;
   messages: ChatMessage[];
   pendingUserRequest: string;
   profile: ShoppingProfile;
+  recommendedProducts?: Product[];
 };
 
 const modes = [
@@ -191,15 +226,22 @@ const starterChips = [
   "Find flowers",
   "Find chocolates",
   "Find perfume",
-  "Same-day delivery",
 ];
 
-const languageOptions: Language[] = ["English", "Sinhala", "Singlish"];
+const starterChipGiftTypes: Record<string, string> = {
+  "Find a cake": "Cakes",
+  "Find chocolates": "Chocolate",
+  "Find flowers": "Flowers",
+  "Find perfume": "Perfumes",
+};
+
+const languageOptions: Language[] = ["English", "Sinhala", "Singlish", "Tanglish"];
 
 const languageLabels: Record<Language, string> = {
   English: "English",
   Sinhala: "සිංහල",
-  Singlish: "Tanglish",
+  Singlish: "Singlish",
+  Tanglish: "Tanglish",
 };
 
 const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
@@ -218,6 +260,13 @@ const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
         "Ayubowan! Mama Kapruka Genie. Oyata ona gift eka kiyanna, mama oyawa guide karannam.",
     },
   ],
+  Tanglish: [
+    {
+      role: "assistant",
+      content:
+        "Vanakkam! Naan Kapruka Genie. Neenga thedura gift pathi sollunga, naan unga details guide pannren.",
+    },
+  ],
 };
 
 const modeIcons: Record<string, IconName> = {
@@ -234,13 +283,28 @@ const budgetOptions = [
   "Rs. 2,500 - 5,000",
   "Rs. 5,000 - 10,000",
   "Above Rs. 10,000",
+  "Other",
 ];
 
-const recipientOptions = ["Male", "Female", "Child", "Couple"];
+const recipientOptions = ["Male", "Female", "Child", "Couple", "Other"];
 
-const occasionOptions = ["Birthday", "Anniversary", "Wedding", "Graduation"];
+const occasionOptions = [
+  "Birthday",
+  "Anniversary",
+  "Wedding",
+  "Graduation",
+  "Other",
+];
 
-const giftTypeOptions = ["Flowers", "Electronics", "Perfumes", "Fashion", "Food"];
+const giftTypeOptions = [
+  "Flowers",
+  "Cakes",
+  "Chocolate",
+  "Electronics",
+  "Perfumes",
+  "Fashion",
+  "Other",
+];
 
 const eventTypeOptions = ["Birthday", "Anniversary", "Office party", "Family gathering"];
 
@@ -351,6 +415,18 @@ const contextQuestions: Record<
     recipient: "Gift eka denna one kaatada?",
     venue: "Event eka koheda thiyenne?",
   },
+  Tanglish: {
+    boxRecipient: "Indha gift box yaarukkaga?",
+    budget: "Budget evlo?",
+    category: "Enna mathiri gift type paakanum?",
+    eventType: "Event type enna?",
+    giftBoxTheme: "Gift box theme enna?",
+    itemCount: "Box la evalo items venum?",
+    occasion: "Indha gift enna occasion ku?",
+    participants: "Participants evalo per varuvaanga?",
+    recipient: "Gift yaarukku kudukkanum?",
+    venue: "Event enga nadakkudhu?",
+  },
 };
 
 const contextQuestionOverrides: Record<
@@ -376,12 +452,22 @@ const contextQuestionOverrides: Record<
     participants: "Participants keedenek innawada?",
     venue: "Event eka koheda thiyenne?",
   },
+  Tanglish: {
+    boxRecipient: "Gift box yaarukkaga?",
+    category: "Enna gift type paakanum?",
+    eventType: "Event type enna?",
+    giftBoxTheme: "Gift box theme enna?",
+    itemCount: "Box ku evalo items venum?",
+    participants: "Participants evalo per?",
+    venue: "Event enga irukku?",
+  },
 };
 
 const giftTypeMessages: Record<Language, string> = {
   English: "Thanks. What type of gift would you like to explore?",
   Sinhala: "ස්තුතියි. ඔබ බලන්න කැමති තෑගි වර්ගය තෝරන්න.",
   Singlish: "Thanks. mokak wage gift type ekak balannada?",
+  Tanglish: "Thanks. Enna gift type paakanum?",
 };
 
 const contextFieldOptions: Record<ContextField, string[]> = {
@@ -439,6 +525,18 @@ const contextFieldLabelsByLanguage: Record<
     recipient: "Recipient",
     venue: "Venue",
   },
+  Tanglish: {
+    boxRecipient: "Recipient",
+    budget: "Budget",
+    category: "Gift type",
+    eventType: "Event type",
+    giftBoxTheme: "Theme",
+    itemCount: "Items",
+    occasion: "Occasion",
+    participants: "Participants",
+    recipient: "Recipient",
+    venue: "Venue",
+  },
 };
 
 const contextFieldLabelOverrides: Record<
@@ -459,6 +557,18 @@ const contextFieldLabelOverrides: Record<
     venue: "ස්ථානය",
   },
   Singlish: {
+    boxRecipient: "Recipient",
+    budget: "Budget",
+    category: "Gift type",
+    eventType: "Event type",
+    giftBoxTheme: "Theme",
+    itemCount: "Items",
+    occasion: "Occasion",
+    participants: "Participants",
+    recipient: "Recipient",
+    venue: "Venue",
+  },
+  Tanglish: {
     boxRecipient: "Recipient",
     budget: "Budget",
     category: "Gift type",
@@ -507,6 +617,111 @@ const initialShoppingProfile: ShoppingProfile = {
   recipient: "",
 };
 
+function getExtendedPreferencesFromProfile(
+  profile: ShoppingProfile,
+): ExtendedPreferences {
+  return {
+    budget: profile.budget,
+    giftType: profile.category,
+    lastRepliedCount: 0,
+    occasion: profile.occasion,
+    recipient: profile.recipient,
+    replyCount: 0,
+  };
+}
+
+function normalizeExtendedPreferences(
+  value: Partial<ExtendedPreferences> | undefined,
+  profile: ShoppingProfile,
+): ExtendedPreferences {
+  const fallback = getExtendedPreferencesFromProfile(profile);
+
+  return {
+    budget: value?.budget ?? fallback.budget,
+    giftType: value?.giftType ?? fallback.giftType,
+    lastRepliedCount: value?.lastRepliedCount ?? 0,
+    occasion: value?.occasion ?? fallback.occasion,
+    recipient: value?.recipient ?? fallback.recipient,
+    replyCount: value?.replyCount ?? 0,
+  };
+}
+
+function mergeExtendedPreferencesWithProfile(
+  current: ExtendedPreferences,
+  profileUpdates: Partial<
+    Pick<ShoppingProfile, "budget" | "category" | "occasion" | "recipient">
+  >,
+  extendedUpdates?: Partial<ExtendedPreferences>,
+): ExtendedPreferences {
+  const nextPreferences = {
+    budget:
+      extendedUpdates?.budget ?? profileUpdates.budget ?? current.budget ?? "",
+    giftType:
+      extendedUpdates?.giftType ??
+      profileUpdates.category ??
+      current.giftType ??
+      "",
+    occasion:
+      extendedUpdates?.occasion ??
+      profileUpdates.occasion ??
+      current.occasion ??
+      "",
+    recipient:
+      extendedUpdates?.recipient ??
+      profileUpdates.recipient ??
+      current.recipient ??
+      "",
+  };
+  const didPreferenceChange =
+    nextPreferences.budget !== current.budget ||
+    nextPreferences.giftType !== current.giftType ||
+    nextPreferences.occasion !== current.occasion ||
+    nextPreferences.recipient !== current.recipient;
+
+  return {
+    ...nextPreferences,
+    lastRepliedCount: current.lastRepliedCount,
+    replyCount: didPreferenceChange ? current.replyCount + 1 : current.replyCount,
+  };
+}
+
+function havePreferenceValuesChanged(
+  current: ExtendedPreferences,
+  updates: Partial<Pick<ExtendedPreferences, "budget" | "giftType" | "occasion" | "recipient">>,
+) {
+  return (
+    (updates.budget !== undefined && updates.budget !== current.budget) ||
+    (updates.giftType !== undefined && updates.giftType !== current.giftType) ||
+    (updates.occasion !== undefined && updates.occasion !== current.occasion) ||
+    (updates.recipient !== undefined && updates.recipient !== current.recipient)
+  );
+}
+
+function applyExtendedPreferenceUpdates(
+  current: ExtendedPreferences,
+  updates: Partial<Pick<ExtendedPreferences, "budget" | "giftType" | "occasion" | "recipient">>,
+) {
+  const didPreferenceChange = havePreferenceValuesChanged(current, updates);
+
+  return {
+    ...current,
+    ...updates,
+    replyCount: didPreferenceChange ? current.replyCount + 1 : current.replyCount,
+  };
+}
+
+function syncExtendedPreferencesWithProfile(
+  current: ExtendedPreferences,
+  profile: ShoppingProfile,
+) {
+  return applyExtendedPreferenceUpdates(current, {
+    budget: profile.budget,
+    giftType: profile.category,
+    occasion: profile.occasion,
+    recipient: profile.recipient,
+  });
+}
+
 function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile {
   return {
     ...initialShoppingProfile,
@@ -516,9 +731,16 @@ function normalizeShoppingProfile(nextProfile: ShoppingProfile): ShoppingProfile
 }
 
 function normalizeModeSession(session: ModeSession): ModeSession {
+  const normalizedProfile = normalizeShoppingProfile(session.profile);
   return {
     ...session,
-    profile: normalizeShoppingProfile(session.profile),
+    extendedPreferences: normalizeExtendedPreferences(
+      session.extendedPreferences,
+      normalizedProfile,
+    ),
+    fitReasons: session.fitReasons ?? {},
+    profile: normalizedProfile,
+    recommendedProducts: session.recommendedProducts ?? [],
   };
 }
 
@@ -580,6 +802,8 @@ const copy: Record<
     useContextCard: string;
     userContext: string;
     voicePause: string;
+    voiceEnglishOnly: string;
+    voiceRetry: string;
     voiceResume: string;
     voiceStop: string;
   }>
@@ -632,6 +856,9 @@ const copy: Record<
     useContextCard: "Use the preferences above...",
     userContext: "Preferences",
     voicePause: "Pause",
+    voiceEnglishOnly: "Voice search supports English only.",
+    voiceRetry:
+      "I couldn't clearly recognize that voice message. Please try again in English.",
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
@@ -682,7 +909,7 @@ const copy: Record<
     city: "City eka",
     clearHistory: "History clear karanna",
     comparePrompt: "Product IDs 2k hari 3k hari denna. Mama table ekakin compare karannam.",
-    continueWithoutContext: "Preferences nathuwa continue",
+    continueWithoutContext: "Preferences nathuwa idiriyata",
     contextIntro:
       "Oyage message eken details detect kala.",
     contextTitle: "Shopping preferences set karanna",
@@ -714,6 +941,48 @@ const copy: Record<
     useContextCard: "Uda preferences use karanna...",
     userContext: "Preferences",
   },
+  Tanglish: {
+    active: "Active",
+    addProducts: "Order build panna products add pannunga.",
+    addToBuyBox: "Cart ku add pannunga",
+    allContextDetected: "Unga message la preferences detect aayiduchu.",
+    askPlaceholder: "Genie kitta search, compare, plan, checkout kekkalaam...",
+    buyBox: "Cart",
+    checkout: "Delivery address",
+    city: "City",
+    clearHistory: "History clear pannunga",
+    comparePrompt: "2 illa 3 product IDs kudunga. Naan compare pannren.",
+    continueWithoutContext: "Preferences illama continue pannunga",
+    contextIntro: "Unga message la irundhu details detect panniten.",
+    contextTitle: "Shopping preferences set pannunga",
+    createOrderLink: "Create Order Link",
+    date: "Date",
+    detectedContext: "Detected preferences",
+    delivery: "Delivery",
+    deliveryInstructions: "Delivery instructions",
+    eventPrompt: "Event plan pannalaam. Keezha details kudunga.",
+    giftBoxPrompt: "Gift box build pannalaam. Keezha details kudunga.",
+    giftMessageLabel: "Gift message",
+    initialEmpty: "Search panna apram Kapruka products inga kaattappadum.",
+    initialLoading: "Products load aagudhu...",
+    language: "Language",
+    modes: "Agent Modes",
+    openCheckout: "Open Checkout",
+    productView: "Paarkka",
+    recipientName: "Recipient name",
+    recipientPhone: "Recipient phone",
+    relatedGiftsReply: "Unga request ku related gifts kaamikiren.",
+    send: "Send",
+    sendContext: "Preferences send pannunga",
+    sending: "Sending",
+    sendingContext: "Preferences sending",
+    senderName: "Sender name",
+    subtotal: "Subtotal",
+    trackingPrompt: "Kapruka order number kudunga. Latest status paathuttu sollren.",
+    total: "Total",
+    useContextCard: "Mela irukka preferences use pannunga...",
+    userContext: "Preferences",
+  },
 };
 
 const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>>> = {
@@ -740,6 +1009,9 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
     useContextCard: "ඉහළ preferences භාවිතා කරන්න...",
     userContext: "Preferences",
     voicePause: "Pause",
+    voiceEnglishOnly: "Voice search සඳහා සහාය දක්වන්නේ English පමණයි.",
+    voiceRetry:
+      "Voice message එක පැහැදිලිව හඳුනාගන්න බැරි වුණා. කරුණාකර English වලින් නැවත උත්සාහ කරන්න.",
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
@@ -752,6 +1024,24 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
     transcribingVoice: "Voice note eka text karanawa...",
     uploadingImage: "Image process wenawa...",
     voicePause: "Pause",
+    voiceEnglishOnly: "Voice search support karanne English witharai.",
+    voiceRetry:
+      "Voice message eka hariyata handunaganna bari una. English walin aye try karanna.",
+    voiceResume: "Resume",
+    voiceStop: "Stop",
+  },
+  Tanglish: {
+    deliveryInstructions: "Delivery instructions",
+    giftMessageLabel: "Gift message",
+    imageLooksLike: "Unga image la theriyardhu",
+    processing: "Processing...",
+    recordingVoice: "Voice record aagudhu...",
+    transcribingVoice: "Voice note text aagudhu...",
+    uploadingImage: "Image process aagudhu...",
+    voicePause: "Pause",
+    voiceEnglishOnly: "Voice search ippo English mattum support pannudhu.",
+    voiceRetry:
+      "Voice message clear aa puriyala. Dayavu seithu English la innum oru thadava try pannunga.",
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
@@ -760,12 +1050,12 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
 const starterChipLabels: Record<Language, Record<string, string>> = {
   English: {},
   Sinhala: {
-    "Build a gift box": "Gift box එකක් හදන්න",
-    "Compare products": "Products compare කරන්න",
-    "Find a gift": "Gift එකක් හොයන්න",
-    "Plan an event": "Event එකක් plan කරන්න",
-    "Track an order": "Order track කරන්න",
-    "Write a gift message": "Gift message ලියන්න",
+    "Build a gift box": "තෑගි පෙට්ටියක් හදන්න",
+    "Compare products": "නිෂ්පාදන සසඳන්න",
+    "Find a gift": "තෑග්ගක් හොයන්න",
+    "Plan an event": "උත්සවයක් සැලසුම් කරන්න",
+    "Track an order": "ඇණවුමක් පරීක්ෂා කරන්න",
+    "Write a gift message": "තෑගි පණිවිඩයක් ලියන්න",
   },
   Singlish: {
     "Build a gift box": "Gift box hadanna",
@@ -775,23 +1065,38 @@ const starterChipLabels: Record<Language, Record<string, string>> = {
     "Track an order": "Order track karanna",
     "Write a gift message": "Gift message liyanna",
   },
+  Tanglish: {
+    "Build a gift box": "Gift box build pannunga",
+    "Compare products": "Products compare pannunga",
+    "Find a gift": "Gift thedunga",
+    "Plan an event": "Event plan pannunga",
+    "Track an order": "Order track pannunga",
+    "Write a gift message": "Gift message ezhudhunga",
+  },
 };
 
 const starterChipOverrides: Record<Language, Record<string, string>> = {
   English: {},
   Sinhala: {
-    "Find a cake": "Cake එකක් හොයන්න",
-    "Find chocolates": "Chocolate හොයන්න",
-    "Find flowers": "Flowers හොයන්න",
-    "Find perfume": "Perfume හොයන්න",
-    "Same-day delivery": "Same-day delivery",
+    "Find a cake": "කේක් එකක් හොයන්න",
+    "Find chocolates": "චොකලට් හොයන්න",
+    "Find flowers": "මල් හොයන්න",
+    "Find perfume": "සුවඳ විලවුන් හොයන්න",
+    "Same-day delivery": "අදම බෙදාහැරීම",
   },
   Singlish: {
     "Find a cake": "Cake ekak hoyanna",
     "Find chocolates": "Chocolate hoyanna",
     "Find flowers": "Flowers hoyanna",
     "Find perfume": "Perfume hoyanna",
-    "Same-day delivery": "Same-day delivery",
+    "Same-day delivery": "Ada delivery",
+  },
+  Tanglish: {
+    "Find a cake": "Cake thedunga",
+    "Find chocolates": "Chocolates thedunga",
+    "Find flowers": "Flowers thedunga",
+    "Find perfume": "Perfume thedunga",
+    "Same-day delivery": "Innaikku delivery",
   },
 };
 
@@ -799,40 +1104,65 @@ const optionLabels: Record<Language, Record<string, string>> = {
   English: {},
   Sinhala: {
     "Above Rs. 10,000": "Rs. 10,000 ට වැඩි",
-    Anniversary: "Anniversary",
-    Birthday: "Birthday",
+    Anniversary: "\u0dc3\u0d82\u0dc0\u0dad\u0dca\u0dc3\u0dbb\u0dba",
+    Birthday: "\u0d8b\u0db4\u0db1\u0dca\u0daf\u0dd2\u0db1\u0dba",
     Child: "ළමයෙක්",
+    Chocolate: "\u0da0\u0ddc\u0d9a\u0dbd\u0da7\u0dca",
     Couple: "Couple",
+    Cakes: "\u0d9a\u0dda\u0d9a\u0dca",
     Electronics: "Electronics",
     Fashion: "Fashion",
     Female: "කාන්තාවක්",
-    Flowers: "Flowers",
-    Food: "Food",
-    Graduation: "Graduation",
+    Flowers: "\u0db8\u0dbd\u0dca",
+    Graduation: "\u0d8b\u0db4\u0dcf\u0db0\u0dd2 \u0db4\u0dca\u0dbb\u0daf\u0dcf\u0db1\u0dba",
     Male: "පුරුෂයෙක්",
-    Perfumes: "Perfumes",
+    Other: "වෙනත්",
+    Perfumes: "\u0dc3\u0dd4\u0dc0\u0db3 \u0dc0\u0dd2\u0dbd\u0dc0\u0dd4\u0db1\u0dca",
     "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
     "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
     "Under Rs. 2,500": "Rs. 2,500 ට අඩු",
-    Wedding: "Wedding",
+    Wedding: "\u0dc0\u0dd2\u0dc0\u0dcf\u0dc4\u0dba",
   },
   Singlish: {
     "Above Rs. 10,000": "Rs. 10,000 ta wedi",
+    Anniversary: "Sanwathsare",
+    Birthday: "Upandinaya",
+    Child: "Child",
+    Chocolate: "Chocolate",
+    Couple: "Couple",
+    Cakes: "Cake",
+    Electronics: "Electronics",
+    Fashion: "Fashion",
+    Female: "Female",
+    Flowers: "Mal",
+    Graduation: "Upadhi pradanaya",
+    Male: "Male",
+    Other: "Wenas",
+    Perfumes: "Perfume",
+    "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
+    "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
+    "Under Rs. 2,500": "Rs. 2,500 ta adu",
+    Wedding: "Vivahaya",
+  },
+  Tanglish: {
+    "Above Rs. 10,000": "Rs. 10,000 mela",
     Anniversary: "Anniversary",
     Birthday: "Birthday",
     Child: "Child",
+    Chocolate: "Chocolate",
     Couple: "Couple",
+    Cakes: "Cakes",
     Electronics: "Electronics",
     Fashion: "Fashion",
     Female: "Female",
     Flowers: "Flowers",
-    Food: "Food",
     Graduation: "Graduation",
     Male: "Male",
+    Other: "Other",
     Perfumes: "Perfumes",
     "Rs. 2,500 - 5,000": "Rs. 2,500 - 5,000",
     "Rs. 5,000 - 10,000": "Rs. 5,000 - 10,000",
-    "Under Rs. 2,500": "Rs. 2,500 ta adu",
+    "Under Rs. 2,500": "Rs. 2,500 keela",
     Wedding: "Wedding",
   },
 };
@@ -877,19 +1207,38 @@ const contextOptionLabels: Record<Language, Record<string, string>> = {
     "Under 10": "10 ta adu",
     Wellness: "Wellness",
   },
+  Tanglish: {
+    "2 items": "2 items",
+    "3 items": "3 items",
+    "4 items": "4 items",
+    "5+ items": "5+ items",
+    "10 - 25": "10 - 25",
+    "25 - 50": "25 - 50",
+    "Above 50": "50 ku mela",
+    "Family gathering": "Family gathering",
+    Home: "Home",
+    Hotel: "Hotel",
+    Office: "Office",
+    "Office party": "Office party",
+    Outdoor: "Outdoor",
+    Party: "Party",
+    Perfume: "Perfume",
+    "Under 10": "10 ku keela",
+    Wellness: "Wellness",
+  },
 };
 
 const dynamicChipLabels: Record<Language, Record<string, string>> = {
   English: {},
   Sinhala: {
-    "Check delivery": "Delivery check කරන්න",
-    Chocolate: "Chocolate",
-    "Colombo delivery": "Colombo delivery",
-    "Create order link": "Order link හදන්න",
+    "Check delivery": "බෙදාහැරීම පරීක්ෂා කරන්න",
+    Chocolate: "චොකලට්",
+    "Colombo delivery": "කොළඹට බෙදාහැරීම",
+    "Create order link": "ඇණවුම් සබැඳිය හදන්න",
     "More like this": "මේ වගේ තවත්",
-    Perfume: "Perfume",
-    Roses: "Roses",
-    Watch: "Watch",
+    Perfume: "සුවඳ විලවුන්",
+    Roses: "රෝස මල්",
+    Watch: "ඔරලෝසුව",
   },
   Singlish: {
     "Check delivery": "Delivery check karanna",
@@ -897,6 +1246,16 @@ const dynamicChipLabels: Record<Language, Record<string, string>> = {
     "Colombo delivery": "Colombo delivery",
     "Create order link": "Order link hadanna",
     "More like this": "Me wage thawa",
+    Perfume: "Perfume",
+    Roses: "Roses",
+    Watch: "Watch",
+  },
+  Tanglish: {
+    "Check delivery": "Delivery check pannunga",
+    Chocolate: "Chocolate",
+    "Colombo delivery": "Colombo delivery",
+    "Create order link": "Order link create pannunga",
+    "More like this": "Idhu maadhiri innum",
     Perfume: "Perfume",
     Roses: "Roses",
     Watch: "Watch",
@@ -906,22 +1265,26 @@ const dynamicChipLabels: Record<Language, Record<string, string>> = {
 const commonChipLabels: Record<Language, Record<string, string>> = {
   English: {
     "Next item": "Next item",
+    "Previous item": "Previous item",
     "Suggest more": "Suggest more",
   },
   Sinhala: {
-    "Check delivery": "Delivery check කරන්න",
+    "Check delivery": "බෙදාහැරීම පරීක්ෂා කරන්න",
     Chocolate: "චොකලට්",
-    "Colombo delivery": "Colombo delivery",
-    "Create order link": "Order link හදන්න",
+    "Colombo delivery": "කොළඹට බෙදාහැරීම",
+    "Create order link": "ඇණවුම් සබැඳිය හදන්න",
     "Enter order number": "Order number එක දාන්න",
     "More like this": "මේ වගේ තවත්",
+    "Next item": "ඊළඟ අයිතමය",
     "Open checkout": "Checkout අරින්න",
+    "Previous item": "පෙර අයිතමය",
     Perfume: "සුවඳ විලවුන්",
     Roses: "රෝස මල්",
     "Search more products": "තව products හොයන්න",
     "Search products": "Products හොයන්න",
     "Track another order": "තව order එකක් track කරන්න",
     "Track order": "Order track කරන්න",
+    "Suggest more": "තවත් යෝජනා",
     Watch: "ඔරලෝසුව",
   },
   Singlish: {
@@ -931,13 +1294,35 @@ const commonChipLabels: Record<Language, Record<string, string>> = {
     "Create order link": "Order link hadanna",
     "Enter order number": "Order number eka danna",
     "More like this": "Me wage thawa",
+    "Next item": "Ilanga item eka",
     "Open checkout": "Open checkout",
+    "Previous item": "Kalin item eka",
     Perfume: "Perfume",
     Roses: "Roses",
     "Search more products": "Thawa products hoyanna",
     "Search products": "Products hoyanna",
     "Track another order": "Thawa order ekak track karanna",
     "Track order": "Order track karanna",
+    "Suggest more": "Thawa yojana",
+    Watch: "Watch",
+  },
+  Tanglish: {
+    "Check delivery": "Delivery check pannunga",
+    Chocolate: "Chocolate",
+    "Colombo delivery": "Colombo delivery",
+    "Create order link": "Order link create pannunga",
+    "Enter order number": "Order number kudunga",
+    "More like this": "Idhu maadhiri innum",
+    "Next item": "Next item",
+    "Open checkout": "Open checkout",
+    "Previous item": "Previous item",
+    Perfume: "Perfume",
+    Roses: "Roses",
+    "Search more products": "Innum products thedunga",
+    "Search products": "Products thedunga",
+    "Track another order": "Innum oru order track pannunga",
+    "Track order": "Order track pannunga",
+    "Suggest more": "Innum suggest pannunga",
     Watch: "Watch",
   },
 };
@@ -953,7 +1338,9 @@ const iconPaths: Record<IconName, string> = {
     "M12 20s-7-4.4-9-9c-1.2-2.8.8-5.8 3.8-5.8 1.8 0 3.1 1 4.2 2.4 1.1-1.4 2.4-2.4 4.2-2.4 3 0 5 3 3.8 5.8-2 4.6-9 9-9 9Z",
   menu: "M4 6h16M4 12h16M4 18h16",
   mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Zm-7 9a7 7 0 0 0 14 0m-7 7v3m-4 0h8",
+  plus: "M12 5v14M5 12h14",
   search: "M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Zm5.5-2 5 5",
+  send: "M12 5v14m0-14-5 5m5-5 5 5",
   settings:
     "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm0-5v3m0 12v3M4.9 4.9 7 7m10 10 2.1 2.1M3 12h3m12 0h3M4.9 19.1 7 17m10-10 2.1-2.1",
   speaker: "M4 9v6h4l5 4V5L8 9H4Zm12 1a4 4 0 0 1 0 4m2-7a8 8 0 0 1 0 10",
@@ -969,7 +1356,6 @@ const CHAT_STORE_NAME = "chat-state";
 const CHAT_STATE_KEY = "current";
 const CHAT_STORAGE_KEY = "kapruka-genie-chat-state";
 const INTRO_PANEL_STORAGE_KEY = "kapruka-genie-intro-panel-date";
-
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Request failed.";
 }
@@ -978,8 +1364,6 @@ function getTaskForMode(mode: string) {
   if (mode.includes("Event")) return "eventPlan";
   if (mode.includes("Gift Box")) return "giftBox";
   if (mode.includes("Compare")) return "compare";
-  if (mode.includes("Tracking")) return "track";
-  if (mode.includes("Message")) return "giftMessage";
   return "recommend";
 }
 
@@ -1073,13 +1457,45 @@ async function clearStoredChatState() {
   database.close();
 }
 
+const rotatingActivityMessages: Record<Language, string[]> = {
+  English: [
+    "Understanding your request...",
+    "Checking your preferences...",
+    "Searching Kapruka products...",
+    "Matching the best options...",
+    "Preparing your reply...",
+  ],
+  Sinhala: [
+    "ඔබේ ඉල්ලීම තේරුම් ගනිමින්...",
+    "Preferences පරීක්ෂා කරමින්...",
+    "Kapruka products සොයමින්...",
+    "හොඳම ගැළපීම් තෝරමින්...",
+    "පිළිතුර සකස් කරමින්...",
+  ],
+  Singlish: [
+    "Oyage request eka balamin...",
+    "Preferences check karamin...",
+    "Kapruka products hoyamin...",
+    "Galapena options thoramin...",
+    "Reply eka hadamin...",
+  ],
+  Tanglish: [
+    "Unga request paathuttu irukken...",
+    "Preferences check pannittu irukken...",
+    "Kapruka products thedittu irukken...",
+    "Best options match pannittu irukken...",
+    "Reply ready pannittu irukken...",
+  ],
+};
+
 export function KaprukaGenieApp() {
+  const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldSendRecordingRef = useRef(false);
   const audioChunksRef = useRef<Blob[]>([]);
-  const playbackUrlRef = useRef<string | null>(null);
+  const chatSoundContextRef = useRef<AudioContext | null>(null);
   const initialProductsLoadedRef = useRef(false);
 
   const [activeMode, setActiveMode] = useState("Smart Shopping");
@@ -1104,6 +1520,10 @@ export function KaprukaGenieApp() {
   });
   const [profile, setProfile] =
     useState<ShoppingProfile>(initialShoppingProfile);
+  const [extendedPreferences, setExtendedPreferences] =
+    useState<ExtendedPreferences>(() =>
+      getExtendedPreferencesFromProfile(initialShoppingProfile),
+    );
   const [conversationStage, setConversationStage] = useState<
     "first-message" | "collecting-context" | "ready"
   >("first-message");
@@ -1134,6 +1554,7 @@ export function KaprukaGenieApp() {
   const [isInfoMenuOpen, setIsInfoMenuOpen] = useState(false);
   const [isBuyBoxOpen, setIsBuyBoxOpen] = useState(false);
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [modeSessions, setModeSessions] = useState<Record<string, ModeSession>>({});
   const [compareIds, setCompareIds] = useState({ first: "", second: "" });
   const [compareRows, setCompareRows] = useState<CompareRow[]>([]);
@@ -1147,6 +1568,7 @@ export function KaprukaGenieApp() {
   const [isCompareSubmitting, setIsCompareSubmitting] = useState(false);
   const [isTrackingSubmitting, setIsTrackingSubmitting] = useState(false);
   const [isCheckoutCreating, setIsCheckoutCreating] = useState(false);
+  const [checkoutWarning, setCheckoutWarning] = useState("");
   const [giftMessagePreferences, setGiftMessagePreferences] =
     useState<GiftMessagePreferences>({
       language: "English",
@@ -1156,6 +1578,7 @@ export function KaprukaGenieApp() {
     });
   const [isGiftMessageGenerating, setIsGiftMessageGenerating] = useState(false);
   const [isIntroPanelVisible, setIsIntroPanelVisible] = useState(false);
+  const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -1171,9 +1594,34 @@ export function KaprukaGenieApp() {
   >;
   const minimumDeliveryDate = getLocalDateString();
   const visibleProducts = recommendedProducts.slice(0, 3);
+  const shouldShowProductSuggestions =
+    conversationStage !== "collecting-context";
+  const isSelectedProductInCart = selectedProduct
+    ? buyBox.some((product) => product.id === selectedProduct.id)
+    : false;
+  const hasUserMessages = messages.some((message) => message.role === "user");
+  const visibleReplyChips =
+    activeMode === "Smart Shopping" && hasUserMessages
+      ? chips.filter((chip) => chip === "Suggest more")
+      : hasUserMessages
+        ? chips.filter((chip) => !isRemovedGenericReplyChip(chip))
+        : chips;
+  const latestAssistantMessageIndex = messages.reduce(
+    (latestIndex, message, index) =>
+      message.role === "assistant" ? index : latestIndex,
+    -1,
+  );
+  const readAloudTitle =
+    language === "Sinhala"
+      ? "අවසන් message එක කියවන්න"
+      : language === "Singlish"
+        ? "Anthima message eka kiyawanna"
+        : "Read latest message aloud";
   const isCompareMode = activeMode.includes("Compare");
   const isTrackingMode = activeMode.includes("Tracking");
   const isGiftMessageMode = activeMode.includes("Message");
+  const isGuidedMode =
+    activeMode.includes("Event") || activeMode.includes("Gift Box");
   const isFormToolMode = isCompareMode || isTrackingMode || isGiftMessageMode;
 
   function closeIntroPanel() {
@@ -1181,14 +1629,25 @@ export function KaprukaGenieApp() {
   }
 
   function getChipLabel(chip: string) {
-    return (
+    const localizedLabel =
       starterChipOverrides[language][chip] ??
       starterChipLabels[language][chip] ??
       commonChipLabels[language][chip] ??
       dynamicChipLabels[language][chip] ??
       contextOptionLabels[language][chip] ??
       optionLabels[language][chip] ??
-      chip
+      chip;
+
+    return localizedLabel.trim().split(/\s+/u).slice(0, 3).join(" ");
+  }
+
+  function getGuidedReplyChips() {
+    return ["Previous item", "Next item", "Suggest more"];
+  }
+
+  function isRemovedGenericReplyChip(chip: string) {
+    return /\b(check delivery|delivery check|create order link|order link|open checkout|more like this|search products|track order)\b|බෙදාහැරීම|ඇණවුම්\s+සබැඳිය/iu.test(
+      chip,
     );
   }
 
@@ -1231,10 +1690,15 @@ export function KaprukaGenieApp() {
         chips: starterChips,
         contextDraft: emptyContextDraft,
         conversationStage: "first-message",
+        extendedPreferences: getExtendedPreferencesFromProfile(
+          initialShoppingProfile,
+        ),
+        fitReasons: {},
         input: "",
         messages: starterMessagesByLanguage[language],
         pendingUserRequest: "",
         profile: normalizeShoppingProfile(initialShoppingProfile),
+        recommendedProducts: [],
       };
     }
 
@@ -1244,6 +1708,8 @@ export function KaprukaGenieApp() {
       chips: [],
       contextDraft: emptyContextDraft,
       conversationStage: needsContext ? "collecting-context" : "ready",
+      extendedPreferences: getExtendedPreferencesFromProfile(profile),
+      fitReasons: {},
       input: "",
       messages: [
         {
@@ -1258,6 +1724,7 @@ export function KaprukaGenieApp() {
           ? "Build a gift box"
           : "",
       profile: normalizeShoppingProfile(profile),
+      recommendedProducts: [],
     };
   }
 
@@ -1266,10 +1733,13 @@ export function KaprukaGenieApp() {
       chips,
       contextDraft,
       conversationStage,
+      extendedPreferences,
+      fitReasons,
       input,
       messages,
       pendingUserRequest,
       profile: normalizeShoppingProfile(profile),
+      recommendedProducts,
     };
   }
 
@@ -1279,10 +1749,18 @@ export function KaprukaGenieApp() {
     setChips(normalizedSession.chips);
     setContextDraft(normalizedSession.contextDraft);
     setConversationStage(normalizedSession.conversationStage);
+    setExtendedPreferences(
+      normalizeExtendedPreferences(
+        normalizedSession.extendedPreferences,
+        normalizedSession.profile,
+      ),
+    );
+    setFitReasons(normalizedSession.fitReasons ?? {});
     setInput(normalizedSession.input);
     setMessages(normalizedSession.messages);
     setPendingUserRequest(normalizedSession.pendingUserRequest);
     setProfile(normalizedSession.profile);
+    setRecommendedProducts(normalizedSession.recommendedProducts ?? []);
   }
 
   function resetToolPanels() {
@@ -1294,20 +1772,84 @@ export function KaprukaGenieApp() {
     setGuidedPlanIndex(0);
   }
 
-  function getProductCardsUpdatedReply(data: CommerceResponse) {
-    if (data.reply?.toLowerCase().startsWith("no products match")) {
-      return data.reply;
+  function getCommerceReply(data: CommerceResponse) {
+    return stripModelThinking(data.reply ?? "").trim();
+  }
+
+  function getRetryableFailureType(error: unknown) {
+    const message = getErrorMessage(error).toLowerCase();
+
+    if (/timed?\s*out|timeout/.test(message)) {
+      return "timeout" as const;
     }
 
-    if (!data.products || data.products.length === 0) {
-      if (language === "Sinhala") return "Products හමු වුණේ නැහැ.";
-      if (language === "Singlish") return "Products hambune naha.";
-      return "I could not find matching products.";
+    return null;
+  }
+
+  function getRetryFailureReply() {
+    if (language === "Sinhala") {
+      return "Model quota සීමාව ඉවර වෙලා. නැවත උත්සාහ කරන්න, නැත්නම් English වලට මාරු වෙන්න.";
     }
 
-    if (language === "Sinhala") return "Products update කළා.";
-    if (language === "Singlish") return "Products update kala.";
-    return "I updated the products.";
+    if (language === "Singlish") {
+      return "Model quota limit eka iwara wela. Ayeth try karanna nathnam English walata maru wenna.";
+    }
+
+    if (language === "Tanglish") {
+      return "Model quota limit reach aayiduchu. Retry pannunga illenna English ku maathunga.";
+    }
+
+    return "Model quota limit reached. Please try again or switch to English.";
+  }
+
+  function addRetryFailure(
+    error: unknown,
+    retryText: string,
+    retryContext = false,
+  ) {
+    const failureType = getRetryableFailureType(error);
+
+    if (!failureType) {
+      return false;
+    }
+
+    const content = getRetryFailureReply();
+    addMessage({
+      role: "assistant",
+      content,
+      retryContext,
+      retryReason: "timeout",
+      retryText,
+    });
+    setStatus(content);
+    return true;
+  }
+
+  function getTryAgainLabel() {
+    if (language === "Sinhala") return "නැවත උත්සාහ කරන්න";
+    if (language === "Singlish") return "Ayeth try karanna";
+    if (language === "Tanglish") return "Retry pannunga";
+    return "Try again";
+  }
+
+  function getSwitchToEnglishLabel() {
+    if (language === "Sinhala") return "English walata maru wenna";
+    if (language === "Singlish") return "English walata maru wenna";
+    if (language === "Tanglish") return "English ku maathunga";
+    return "Switch to English";
+  }
+
+  function getEmptyCartWarning(selectedLanguage: Language = language) {
+    if (selectedLanguage === "Sinhala") {
+      return "Create Order Link click karanna kalin cart ekata item ekak hari add karanna.";
+    }
+    if (selectedLanguage === "Singlish") {
+      return "Create Order Link click karanna kalin cart ekata item ekak add karanna.";
+    }
+    if (selectedLanguage === "Tanglish") {
+      return "Create Order Link click pannurathukku munnaadi cart ku oru item add pannunga.";
+    }
+    return "Please add at least one item to the cart before creating the order link.";
   }
 
   function getParticipantCount(draft: ContextDraft) {
@@ -1364,7 +1906,7 @@ export function KaprukaGenieApp() {
 
   function getDefaultPlanItems(mode: string, draft: ContextDraft): GuidedPlanItem[] {
     if (mode.includes("Gift Box")) {
-      const theme = draft.giftBoxTheme || profile.category;
+      const theme = draft.giftBoxTheme || draft.category || profile.category;
       const itemCount = getGiftBoxItemCount(draft);
 
       if (theme === "Flowers") {
@@ -1409,8 +1951,12 @@ export function KaprukaGenieApp() {
     ];
   }
 
-  function normalizeGuidedPlanItems(items: string[], mode = activeMode) {
-    const fallback = getDefaultPlanItems(mode, contextDraft);
+  function normalizeGuidedPlanItems(
+    items: string[],
+    mode = activeMode,
+    draft = contextDraft,
+  ) {
+    const fallback = getDefaultPlanItems(mode, draft);
 
     if (mode.includes("Event")) {
       return fallback;
@@ -1428,23 +1974,29 @@ export function KaprukaGenieApp() {
       : fallback;
   }
 
-  function getGuidedPlanReply(items: GuidedPlanItem[], index = 0) {
+  function getGuidedPlanReply(
+    items: GuidedPlanItem[],
+    index = 0,
+    replyLanguage = language,
+  ) {
     const nextItem = items[index]?.label ?? items[0]?.label ?? "gift";
-    const nextItemLabel = nextItem;
-    const list = items
-      .slice(0, 5)
+    const itemList = items
       .map((item) => `- ${formatGuidedPlanItem(item)}`)
       .join("\n");
 
-    if (language === "Sinhala") {
-      return `ඔබට අවශ්‍ය විය හැකි දේ: ${list}. මුලින්ම ${nextItem} suggest කරන්නම්.`;
+    if (replyLanguage === "Sinhala") {
+      return `යෝජිත අයිතම ලැයිස්තුව:\n${itemList}\n\nමුලින්ම ${nextItem} සඳහා options පෙන්වන්නම්. ඊළඟ අයිතමයට යන්න Next item ඔබන්න.`;
     }
 
-    if (language === "Singlish") {
-      return `Oyata one wenna puluwan dewal:\n${list}\nMulinnama ${nextItemLabel} suggest karannam.`;
+    if (replyLanguage === "Singlish") {
+      return `Yojitha item list eka:\n${itemList}\n\nMulinnama ${nextItem} walata options pennannam. Ilanga item ekata yanna Next item obanna.`;
     }
 
-    return `This is what you might need:\n${list}\nFirst I will suggest ${nextItemLabel}.`;
+    if (replyLanguage === "Tanglish") {
+      return `Suggested item list:\n${itemList}\n\nMudhal la ${nextItem} ku options kaamikiren. Adutha item ku poganum na Next item use pannunga.`;
+    }
+
+    return `Suggested item list:\n${itemList}\n\nI will start by showing options for ${nextItem}. Use Next item to move through the list.`;
   }
 
   function getStepReply(item: GuidedPlanItem | string, isMore = false) {
@@ -1453,28 +2005,29 @@ export function KaprukaGenieApp() {
     if (isMore) {
       if (language === "Sinhala") return `${label} walata thawa options pennanawa.`;
       if (language === "Singlish") return `${label} walata thawa options pennanawa.`;
+      if (language === "Tanglish") return `${label} ku innum sila options kaamikiren.`;
       return `I will show more options for ${label}.`;
     }
 
     if (typeof item !== "string") {
       if (language === "Sinhala") return `Dan ${label} walata cards pennanawa.`;
       if (language === "Singlish") return `Dan ${label} walata cards pennanawa.`;
+      if (language === "Tanglish") return `Ippo ${label} ku cards kaatturen.`;
       return `Now I will suggest ${label}.`;
     }
 
     if (language === "Sinhala") return `දැන් ${item} සඳහා cards පෙන්වනවා.`;
     if (language === "Singlish") return `Dan ${item} walata cards pennanawa.`;
+    if (language === "Tanglish") return `Ippo ${item} ku cards kaatturen.`;
     return `Now I will suggest ${item}.`;
-  }
-
-  function getNeutralGuidedReply() {
-    if (language === "Sinhala") return "Hari, ekata galapena options pennanawa.";
-    if (language === "Singlish") return "Hari, ekata galapena options pennanawa.";
-    return "Sure, I will show related options";
   }
 
   function getImageSearchReply(data: ImageResponse) {
     const imageSummary = data.summary?.trim();
+
+    if (data.fallback) {
+      return text.relatedGiftsReply;
+    }
 
     return imageSummary
       ? `${text.imageLooksLike} ${imageSummary}. ${text.relatedGiftsReply}`
@@ -1483,6 +2036,9 @@ export function KaprukaGenieApp() {
 
   function handleLanguageChange(nextLanguage: Language) {
     setLanguage(nextLanguage);
+    setCheckoutWarning((current) =>
+      current ? getEmptyCartWarning(nextLanguage) : current,
+    );
     setMessages((current) => {
       const starterContent = new Set(
         Object.values(starterMessagesByLanguage).map(
@@ -1842,6 +2398,7 @@ export function KaprukaGenieApp() {
                 <option>English</option>
                 <option>Sinhala</option>
                 <option>Singlish</option>
+                <option>Tanglish</option>
               </select>
             </label>
             <label className="grid gap-1 text-sm font-bold text-[#675f79]">
@@ -1909,6 +2466,39 @@ export function KaprukaGenieApp() {
   }
 
   useEffect(() => {
+    if (!isSending) {
+      return;
+    }
+
+    const messagesForLanguage = rotatingActivityMessages[language];
+    let nextMessageIndex = 0;
+    const intervalId = window.setInterval(() => {
+      setActivityMessage(messagesForLanguage[nextMessageIndex]);
+      nextMessageIndex = (nextMessageIndex + 1) % messagesForLanguage.length;
+    }, 1800);
+
+    return () => window.clearInterval(intervalId);
+  }, [isSending, language]);
+
+  useEffect(() => {
+    if (isFormToolMode) {
+      return;
+    }
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const container = chatScrollContainerRef.current;
+      if (container) {
+        container.scrollTo({
+          behavior: "smooth",
+          top: container.scrollHeight,
+        });
+      }
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activityMessage, chips, isFormToolMode, messages, recommendedProducts]);
+
+  useEffect(() => {
     const today = getLocalDateString();
 
     try {
@@ -1919,7 +2509,6 @@ export function KaprukaGenieApp() {
       // If storage is unavailable, still show the welcome sheet for this load.
     }
 
-    let hideTimer: number | undefined;
     const showTimer = window.setTimeout(() => {
       setIsIntroPanelVisible(true);
 
@@ -1928,17 +2517,10 @@ export function KaprukaGenieApp() {
       } catch {
         // Ignore private browsing or storage quota errors.
       }
-
-      hideTimer = window.setTimeout(() => {
-        setIsIntroPanelVisible(false);
-      }, 5000);
     }, 3000);
 
     return () => {
       window.clearTimeout(showTimer);
-      if (hideTimer !== undefined) {
-        window.clearTimeout(hideTimer);
-      }
     };
   }, []);
 
@@ -1963,10 +2545,16 @@ export function KaprukaGenieApp() {
               chips: storedState.chips,
               contextDraft: storedState.contextDraft,
               conversationStage: storedState.conversationStage,
+              extendedPreferences: normalizeExtendedPreferences(
+                storedState.extendedPreferences,
+                storedState.profile,
+              ),
+              fitReasons: storedState.fitReasons ?? {},
               input: storedState.input,
               messages: storedState.messages,
               pendingUserRequest: storedState.pendingUserRequest,
               profile: normalizeShoppingProfile(storedState.profile),
+              recommendedProducts: storedState.recommendedProducts ?? [],
             };
           const shouldUseFreshStarterChips =
             restoredSession.conversationStage === "first-message" &&
@@ -1981,6 +2569,7 @@ export function KaprukaGenieApp() {
           setActiveMode(restoredMode);
           setLanguage(storedState.language);
           setModeSessions(restoredSessions);
+          setBuyBox(storedState.buyBox ?? []);
           applyModeSession(sessionToApply);
         }
       } catch (error) {
@@ -2011,40 +2600,61 @@ export function KaprukaGenieApp() {
       chips,
       contextDraft,
       conversationStage,
+      extendedPreferences,
+      fitReasons,
       input,
       language,
       messages,
+      buyBox,
+      profile,
+      recommendedProducts,
       modeSessions: {
         ...modeSessions,
         [activeMode]: {
           chips,
           contextDraft,
           conversationStage,
+          extendedPreferences,
+          fitReasons,
           input,
           messages,
           pendingUserRequest,
           profile,
+          recommendedProducts,
         },
       },
       pendingUserRequest,
-      profile,
     });
   }, [
     activeMode,
     chips,
     contextDraft,
     conversationStage,
+    extendedPreferences,
+    fitReasons,
     input,
     isChatStateLoaded,
     language,
     messages,
+    buyBox,
     modeSessions,
     pendingUserRequest,
     profile,
+    recommendedProducts,
   ]);
 
   useEffect(() => {
+    if (!isChatStateLoaded) {
+      return;
+    }
+
     if (initialProductsLoadedRef.current) {
+      return;
+    }
+
+    if (recommendedProducts.length > 0) {
+      initialProductsLoadedRef.current = true;
+      window.setTimeout(() => setIsLoadingInitialProducts(false), 0);
       return;
     }
 
@@ -2174,13 +2784,120 @@ export function KaprukaGenieApp() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isChatStateLoaded, recommendedProducts.length]);
 
   function addMessage(message: ChatMessage) {
+    if (message.role === "assistant") {
+      playChatSound("receive");
+    }
     setMessages((current) => [...current, message]);
   }
 
+  function appendAssistantMessage(content: string) {
+    if (!content.trim()) {
+      return;
+    }
+
+    addMessage({
+      role: "assistant",
+      content,
+    });
+  }
+
+  function markReplyGeneratedForCount(replyCount: number) {
+    setExtendedPreferences((current) =>
+      replyCount > current.lastRepliedCount
+        ? { ...current, lastRepliedCount: replyCount }
+        : current,
+    );
+  }
+
+  function appendAssistantMessageForReplyCount(
+    content: string,
+    replyPreferences = extendedPreferences,
+  ) {
+    if (!content.trim()) {
+      return;
+    }
+
+    if (
+      replyPreferences.replyCount > 0 &&
+      replyPreferences.replyCount <= replyPreferences.lastRepliedCount
+    ) {
+      return;
+    }
+
+    appendAssistantMessage(content);
+    if (replyPreferences.replyCount > 0) {
+      markReplyGeneratedForCount(replyPreferences.replyCount);
+    }
+  }
+
+  function playChatSound(type: "receive" | "send") {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+
+    if (!AudioContextCtor) {
+      return;
+    }
+
+    try {
+      const context =
+        chatSoundContextRef.current ?? new AudioContextCtor();
+
+      chatSoundContextRef.current = context;
+
+      if (context.state === "suspended") {
+        void context.resume().catch(() => undefined);
+      }
+
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const startAt = context.currentTime;
+      const duration = type === "send" ? 0.08 : 0.12;
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(
+        type === "send" ? 660 : 520,
+        startAt,
+      );
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.03, startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        startAt + duration,
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt);
+      oscillator.stop(startAt + duration);
+    } catch {
+      // Ignore audio playback failures so chat flow stays uninterrupted.
+    }
+  }
+
+  function updateSelectedPreference(
+    field: "budget" | "category" | "occasion" | "recipient",
+    value: string,
+  ) {
+    setProfile((current) => ({ ...current, [field]: value }));
+    const extendedField = field === "category" ? "giftType" : field;
+    setExtendedPreferences((current) =>
+      applyExtendedPreferenceUpdates(current, {
+        [extendedField]: value,
+      }),
+    );
+  }
+
   function addToBuyBox(product: Product) {
+    setCheckoutWarning("");
     setBuyBox((current) =>
       current.some((item) => item.id === product.id)
         ? current
@@ -2192,8 +2909,11 @@ export function KaprukaGenieApp() {
     setBuyBox((current) => current.filter((item) => item.id !== productId));
   }
 
-  function applyCommerceResponse(data: CommerceResponse) {
-    if (data.products && data.products.length > 0) {
+  function applyCommerceResponse(
+    data: CommerceResponse,
+    applyPreferenceUpdates = false,
+  ) {
+    if (data.products) {
       setRecommendedProducts(data.products);
     }
 
@@ -2209,7 +2929,7 @@ export function KaprukaGenieApp() {
       );
     }
 
-    if (data.chips && data.chips.length > 0) {
+    if (data.chips) {
       setChips(data.chips);
     }
 
@@ -2235,36 +2955,134 @@ export function KaprukaGenieApp() {
     if (data.giftMessage) {
       setGiftMessage(data.giftMessage);
     }
+
+    if (applyPreferenceUpdates && data.preferences) {
+      const nextPreferences = data.preferences;
+      const profileUpdates = {
+        budget: nextPreferences.budget,
+        category: nextPreferences.category,
+        occasion: nextPreferences.occasion,
+        recipient: nextPreferences.recipient,
+      };
+
+      setProfile((current) => ({
+        ...current,
+        ...profileUpdates,
+      }));
+      setExtendedPreferences((current) =>
+        mergeExtendedPreferencesWithProfile(
+          current,
+          profileUpdates,
+          data.extendedPreferences,
+        ),
+      );
+    } else if (data.extendedPreferences) {
+      const { budget, giftType, occasion, recipient } = data.extendedPreferences;
+      setExtendedPreferences((current) =>
+        applyExtendedPreferenceUpdates(current, {
+          budget,
+          giftType,
+          occasion,
+          recipient,
+        }),
+      );
+    }
+
   }
 
   async function runCommerce(
     query: string,
     mode = activeMode,
     profileOverride = profile,
+    applyPreferenceUpdates = true,
+    userMessage = query,
+    preserveProfile = false,
+    extendedPreferencesOverride = extendedPreferences,
   ) {
     const requestProfile = normalizeShoppingProfile(profileOverride);
-    const response = await fetch("/api/ai/commerce", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        cartIds: buyBox.map((product) => product.id),
-        language,
-        mode,
-        profile: requestProfile,
-        query,
-        task: getTaskForMode(mode),
-      }),
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 28000);
+    const requestBody = JSON.stringify({
+      cartIds: buyBox.map((product) => product.id),
+      conversationHistory: messages
+        .filter(
+          (message) =>
+            message.role === "user" || message.role === "assistant",
+        )
+        .slice(-3)
+        .map(({ content, role }) => ({ content, role })),
+      extendedPreferences: extendedPreferencesOverride,
+      language,
+      mode,
+      profile: requestProfile,
+      preserveProfile,
+      query,
+      task: getTaskForMode(mode),
+      userMessage,
     });
-    const data = (await response.json()) as CommerceResponse & { error?: string };
 
-    if (!response.ok) {
-      throw new Error(data.error ?? "Kapruka MCP commerce request failed.");
+    try {
+      while (true) {
+        let response: Response;
+
+        try {
+          response = await fetch("/api/ai/commerce", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: requestBody,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new Error("The request timed out. Please try again.");
+          }
+
+          throw error;
+        }
+
+        let data: (CommerceResponse & { error?: string }) | null = null;
+        try {
+          data = (await response.json()) as CommerceResponse & { error?: string };
+        } catch {
+          // Retry empty HTTP bodies until a valid response arrives or the
+          // existing request deadline turns this into a visible timeout.
+        }
+
+        const errorMessage = data?.error ?? "";
+        const isEmptyResponse =
+          !data ||
+          Object.keys(data).length === 0 ||
+          /empty(?:\s+\w+)*\s+response/i.test(errorMessage);
+
+        if (isEmptyResponse) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (!data) {
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(errorMessage || "Kapruka MCP commerce request failed.");
+        }
+
+        if (
+          applyPreferenceUpdates &&
+          !stripModelThinking(data.reply ?? "").trim()
+        ) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        applyCommerceResponse(data, applyPreferenceUpdates);
+        return data;
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-
-    applyCommerceResponse(data);
-    return data;
   }
 
   function getContextDraftFromProfile(nextProfile: ShoppingProfile) {
@@ -2324,37 +3142,90 @@ export function KaprukaGenieApp() {
       : "Continue without context";
   }
 
-  async function analyzeFirstMessage(content: string) {
-    const response = await fetch("/api/ai/context-analysis", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        context: {
-          budget: profile.budget || null,
-          occasion: profile.occasion || null,
-          recipient: profile.recipient || null,
-        },
-        message: content,
-      }),
-    });
-    const data = (await response.json()) as ContextAnalysisResponse;
-
-    if (!response.ok) {
-      throw new Error(data.error ?? "Groq context analysis failed.");
-    }
-
-    return data;
+  function getPreferenceDraftFromProfile(nextProfile: ShoppingProfile): ContextDraft {
+    return getContextDraftFromProfile(nextProfile);
   }
 
-  function showContextPanel(nextProfile: ShoppingProfile) {
+  function buildPreferenceMessage(nextProfile: ShoppingProfile) {
+    return buildContextSummary(getPreferenceDraftFromProfile(nextProfile));
+  }
+
+  async function analyzeFirstMessage(content: string) {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 28000);
+    const requestBody = JSON.stringify({
+      context: {
+        budget: profile.budget || null,
+        category: profile.category || null,
+        occasion: profile.occasion || null,
+        recipient: profile.recipient || null,
+      },
+      message: content,
+      selectedLanguage: language,
+    });
+
+    try {
+      while (true) {
+        let response: Response;
+        try {
+          response = await fetch("/api/ai/context-analysis", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: requestBody,
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            throw new Error("The request timed out. Please try again.");
+          }
+
+          throw error;
+        }
+
+        let data: ContextAnalysisResponse | null = null;
+        try {
+          data = (await response.json()) as ContextAnalysisResponse;
+        } catch {
+          // Retry an empty body within the same overall request deadline.
+        }
+
+        const errorMessage = data?.error ?? "";
+        if (
+          !data ||
+          Object.keys(data).length === 0 ||
+          /empty(?:\s+\w+)*\s+(?:analysis|response)/i.test(errorMessage)
+        ) {
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+          continue;
+        }
+
+        if (!data) {
+          continue;
+        }
+
+        if (!response.ok) {
+          throw new Error(errorMessage || "Groq context analysis failed.");
+        }
+
+        return data;
+      }
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  }
+
+  function showContextPanel(
+    nextProfile: ShoppingProfile,
+    detectedLanguage = language,
+  ) {
     setConversationStage("collecting-context");
     setContextDraft(getContextDraftFromProfile(nextProfile));
     setChips([]);
     addMessage({
       role: "assistant",
-      content: getModeIntroMessage(activeMode),
+      content: getModeIntroMessage(activeMode, detectedLanguage),
       variant: "context-panel",
     });
     setStatus("Choose context chips or continue without context.");
@@ -2363,6 +3234,8 @@ export function KaprukaGenieApp() {
   async function answerWithCollectedContext(
     request: string,
     requestProfile: ShoppingProfile,
+    requestDraft = contextDraft,
+    requestExtendedPreferences = extendedPreferences,
   ) {
     setConversationStage("ready");
     setChips(starterChips);
@@ -2370,41 +3243,48 @@ export function KaprukaGenieApp() {
       "Groq is answering with the collected context. Kapruka MCP is searching products.",
     );
     const commerceData = await runCommerce(
-      `${request}\n${buildContextSummary(contextDraft)}\nBudget: ${requestProfile.budget}\nRecipient: ${requestProfile.recipient}\nOccasion: ${requestProfile.occasion}\nGift type: ${requestProfile.category}`,
+      `${request}\n${buildContextSummary(requestDraft)}\nBudget: ${requestProfile.budget}\nRecipient: ${requestProfile.recipient}\nOccasion: ${requestProfile.occasion}\nGift type: ${requestProfile.category}`,
       activeMode,
       requestProfile,
+      true,
+      request,
+      true,
+      requestExtendedPreferences,
     );
 
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
       const planItems = normalizeGuidedPlanItems(
         commerceData.eventPlan ?? [],
         activeMode,
+        requestDraft,
       );
       const firstItem = planItems[0] ?? "gift";
 
       setGuidedPlanItems(planItems);
       setGuidedPlanIndex(0);
       setGuidedMoreCount(0);
-      await runCommerce(getPlanSearchTerm(firstItem), activeMode, requestProfile);
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: getGuidedPlanReply(planItems, 0),
-        },
-      ]);
-      setChips(["Next item", "Suggest more"]);
+      await runCommerce(
+        getPlanSearchTerm(firstItem),
+        activeMode,
+        requestProfile,
+        false,
+      );
+      appendAssistantMessage(
+        `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
+          planItems,
+          0,
+          language,
+        )}`,
+      );
+      setChips(getGuidedReplyChips());
       setStatus("Guided suggestions ready.");
       return;
     }
 
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getProductCardsUpdatedReply(commerceData),
-      },
-    ]);
+    appendAssistantMessageForReplyCount(
+      getCommerceReply(commerceData),
+      requestExtendedPreferences,
+    );
     setStatus("Groq reply complete. Kapruka MCP commerce panels updated.");
   }
 
@@ -2417,15 +3297,59 @@ export function KaprukaGenieApp() {
       nextProfile = {
         ...profile,
         budget: analysis.budget ?? profile.budget,
+        category: analysis.category ?? profile.category,
         occasion: analysis.occasion ?? profile.occasion,
         recipient: analysis.recipient ?? profile.recipient,
       };
     } catch (error) {
+      if (getRetryableFailureType(error)) {
+        throw error;
+      }
+
       setStatus(`${getErrorMessage(error)} Choose context manually.`);
     }
 
     setPendingUserRequest(content);
-    showContextPanel(nextProfile);
+    if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
+      const nextDraft = getContextDraftFromProfile(nextProfile);
+      setProfile(nextProfile);
+      setExtendedPreferences((current) =>
+        syncExtendedPreferencesWithProfile(current, nextProfile),
+      );
+      setContextDraft(nextDraft);
+      await answerWithCollectedContext(
+        content,
+        nextProfile,
+        nextDraft,
+        syncExtendedPreferencesWithProfile(extendedPreferences, nextProfile),
+      );
+      return;
+    }
+
+    const hasDetectedShoppingPreferences = Boolean(
+      nextProfile.budget ||
+        nextProfile.category ||
+        nextProfile.occasion ||
+        nextProfile.recipient,
+    );
+
+    if (hasDetectedShoppingPreferences) {
+      setProfile(nextProfile);
+      const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+        extendedPreferences,
+        nextProfile,
+      );
+      setExtendedPreferences(nextExtendedPreferences);
+      await handleReadyMessage(
+        content,
+        nextProfile,
+        nextExtendedPreferences,
+        true,
+      );
+      return;
+    }
+
+    showContextPanel(nextProfile, language);
   }
 
   function selectContextOption(field: ContextField, value: string) {
@@ -2456,6 +3380,11 @@ export function KaprukaGenieApp() {
     ];
 
     setProfile(nextProfile);
+    const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+      extendedPreferences,
+      nextProfile,
+    );
+    setExtendedPreferences(nextExtendedPreferences);
     setMessages(nextMessages);
     setIsSending(true);
     setActivityMessage(text.processing);
@@ -2464,40 +3393,97 @@ export function KaprukaGenieApp() {
       await answerWithCollectedContext(
         pendingUserRequest || contextMessage,
         nextProfile,
+        contextDraft,
+        nextExtendedPreferences,
       );
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      if (
+        !addRetryFailure(
+          error,
+          pendingUserRequest || contextMessage,
+          true,
+        )
+      ) {
+        setStatus(getErrorMessage(error));
+      }
     } finally {
       setActivityMessage("");
       setIsSending(false);
     }
   }
 
-  async function handleReadyMessage(content: string) {
+  async function handleReadyMessage(
+    content: string,
+    profileOverride = profile,
+    extendedPreferencesOverride = extendedPreferences,
+    enforceReplyCount = false,
+  ) {
     setStatus("Groq is answering. Kapruka MCP is searching products.");
-    const commerceData = await runCommerce(content);
+    const commerceData = await runCommerce(
+      content,
+      activeMode,
+      profileOverride,
+      true,
+      content,
+      false,
+      extendedPreferencesOverride,
+    );
 
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getProductCardsUpdatedReply(commerceData),
-      },
-    ]);
+    if (enforceReplyCount) {
+      appendAssistantMessageForReplyCount(
+        getCommerceReply(commerceData),
+        extendedPreferencesOverride,
+      );
+    } else {
+      appendAssistantMessage(getCommerceReply(commerceData));
+    }
     setStatus("Groq chat complete. Kapruka MCP commerce panels updated.");
   }
 
+  async function handleSidebarPreferenceSubmit() {
+    if (isSending) {
+      return;
+    }
+
+    const preferenceMessage = buildPreferenceMessage(profile);
+    if (preferenceMessage === "Continue without context") {
+      setStatus("Choose at least one preference before sending.");
+      return;
+    }
+
+    const nextMessages: ChatMessage[] = [
+      ...messages,
+      { role: "user", content: preferenceMessage },
+    ];
+
+    setMessages(nextMessages);
+    playChatSound("send");
+    setPendingUserRequest(preferenceMessage);
+    setIsSending(true);
+    setActivityMessage(text.processing);
+
+    try {
+      await handleReadyMessage(
+        preferenceMessage,
+        profile,
+        extendedPreferences,
+        true,
+      );
+    } catch (error) {
+      if (!addRetryFailure(error, preferenceMessage)) {
+        setStatus(getErrorMessage(error));
+      }
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
   async function handleGuidedCustomMessage(content: string) {
-    setStatus("Kapruka MCP is finding related guided options.");
-    await runCommerce(content);
-    setMessages((current) => [
-      ...current,
-      {
-        role: "assistant",
-        content: getNeutralGuidedReply(),
-      },
-    ]);
-    setChips(["Next item", "Suggest more"]);
+    setStatus("Groq is answering and finding related guided options.");
+    const commerceData = await runCommerce(content);
+    appendAssistantMessage(getCommerceReply(commerceData));
+    setChips(getGuidedReplyChips());
     setStatus("Related guided options loaded.");
   }
 
@@ -2509,16 +3495,8 @@ export function KaprukaGenieApp() {
     const nextIndex = guidedPlanIndex + 1;
 
     if (nextIndex >= guidedPlanItems.length) {
-      setChips(["Next item", "Suggest more"]);
-      addMessage({
-        role: "assistant",
-        content:
-          language === "Singlish"
-            ? "Checklist eke okkoma item cards pennuwa."
-            : language === "Sinhala"
-              ? "Checklist item cards සියල්ල පෙන්වා අවසන්."
-              : "I have shown the checklist item cards.",
-      });
+      setChips(getGuidedReplyChips());
+      setStatus("All guided item cards are shown.");
       return;
     }
 
@@ -2528,13 +3506,47 @@ export function KaprukaGenieApp() {
     setGuidedPlanIndex(nextIndex);
 
     try {
-      await runCommerce(getPlanSearchTerm(nextItem));
-      addMessage({
-        role: "assistant",
-        content: getStepReply(nextItem),
-      });
-      setChips(["Next item", "Suggest more"]);
+      setRecommendedProducts([]);
+      setFitReasons({});
+      await runCommerce(getPlanSearchTerm(nextItem), activeMode, profile, false);
+      setChips(getGuidedReplyChips());
       setStatus("Next guided item loaded.");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
+  async function handlePreviousGuidedItem() {
+    if (isSending || guidedPlanItems.length === 0) {
+      return;
+    }
+
+    const previousIndex = guidedPlanIndex - 1;
+
+    if (previousIndex < 0) {
+      setStatus("You are already at the first guided item.");
+      return;
+    }
+
+    const previousItem = guidedPlanItems[previousIndex];
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    setGuidedPlanIndex(previousIndex);
+
+    try {
+      setRecommendedProducts([]);
+      setFitReasons({});
+      await runCommerce(
+        getPlanSearchTerm(previousItem),
+        activeMode,
+        profile,
+        false,
+      );
+      setChips(getGuidedReplyChips());
+      setStatus("Previous guided item loaded.");
     } catch (error) {
       setStatus(getErrorMessage(error));
     } finally {
@@ -2558,12 +3570,13 @@ export function KaprukaGenieApp() {
       setGuidedMoreCount(nextMoreCount);
       setRecommendedProducts([]);
       setFitReasons({});
-      await runCommerce(getMoreSearchTerm(currentItem, nextMoreCount));
-      addMessage({
-        role: "assistant",
-        content: getStepReply(currentItem, true),
-      });
-      setChips(["Next item", "Suggest more"]);
+      await runCommerce(
+        getMoreSearchTerm(currentItem, nextMoreCount),
+        activeMode,
+        profile,
+        false,
+      );
+      setChips(getGuidedReplyChips());
       setStatus("More options loaded.");
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -2573,21 +3586,122 @@ export function KaprukaGenieApp() {
     }
   }
 
+  async function handleSuggestMoreShopping() {
+    if (isSending) {
+      return;
+    }
+
+    if (!profile.budget) {
+      setStatus("Choose a budget before requesting more products.");
+      return;
+    }
+
+    if (recommendedProducts.length > 3) {
+      setRecommendedProducts((current) => [
+        ...current.slice(3),
+        ...current.slice(0, 3),
+      ]);
+      addMessage({
+        role: "assistant",
+        content:
+          language === "Singlish"
+            ? "Thawa budget ekata galapena options pennanawa."
+            : language === "Tanglish"
+              ? "Unga budget ku set aagara innum sila options inga irukku."
+            : language === "Sinhala"
+              ? "ඔබේ අයවැයට ගැළපෙන තවත් විකල්ප පෙන්වන්නම්."
+              : "Here are more options within your budget.",
+      });
+      setStatus("More budget-matched products shown.");
+      return;
+    }
+
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    try {
+      const commerceData = await runCommerce(
+        `${profile.category || "gift"} more options`,
+        activeMode,
+        profile,
+        false,
+        "Suggest more",
+        true,
+      );
+      addMessage({
+        role: "assistant",
+        content: getCommerceReply(commerceData),
+      });
+      setStatus("More budget-matched products loaded.");
+    } catch (error) {
+      setStatus(getErrorMessage(error));
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
   function handleChipClick(chip: string) {
+    if (chip === "Previous item") {
+      void handlePreviousGuidedItem();
+      return;
+    }
+
     if (chip === "Next item") {
       void handleNextGuidedItem();
       return;
     }
 
     if (chip === "Suggest more") {
-      void handleSuggestMoreGuidedItem();
+      if (activeMode === "Smart Shopping") {
+        void handleSuggestMoreShopping();
+      } else {
+        void handleSuggestMoreGuidedItem();
+      }
       return;
     }
 
-    void submitText(getLocalizedUserText(chip));
+    void submitText(getLocalizedUserText(chip), starterChipGiftTypes[chip]);
   }
 
-  async function submitText(nextText: string) {
+  async function handleRetryMessage(message: ChatMessage) {
+    const retryText = message.retryText?.trim();
+    if (!retryText || isSending) {
+      return;
+    }
+
+    setMessages((current) =>
+      current.map((item) =>
+        item === message
+          ? {
+              ...item,
+              retryContext: undefined,
+              retryReason: undefined,
+              retryText: undefined,
+            }
+          : item,
+      ),
+    );
+
+    if (!message.retryContext) {
+      await submitText(retryText);
+      return;
+    }
+
+    setIsSending(true);
+    setActivityMessage(text.processing);
+    try {
+      await answerWithCollectedContext(retryText, profile);
+    } catch (error) {
+      if (!addRetryFailure(error, retryText, true)) {
+        setStatus(getErrorMessage(error));
+      }
+    } finally {
+      setActivityMessage("");
+      setIsSending(false);
+    }
+  }
+
+  async function submitText(nextText: string, starterGiftType?: string) {
     const content = nextText.trim();
     if (!content || isSending) {
       return;
@@ -2599,12 +3713,38 @@ export function KaprukaGenieApp() {
     ];
 
     setMessages(nextMessages);
+    playChatSound("send");
     setInput("");
     setIsSending(true);
     setActivityMessage(text.processing);
 
     try {
-      if (conversationStage === "collecting-context") {
+      if (starterGiftType) {
+        const nextProfile = { ...profile, category: starterGiftType };
+        const nextExtendedPreferences = {
+          ...applyExtendedPreferenceUpdates(extendedPreferences, {
+            giftType: starterGiftType,
+          }),
+        };
+        setProfile(nextProfile);
+        setExtendedPreferences(nextExtendedPreferences);
+        setPendingUserRequest(content);
+
+        if (conversationStage === "first-message") {
+          showContextPanel(nextProfile, language);
+        } else {
+          const commerceData = await runCommerce(
+            content,
+            activeMode,
+            nextProfile,
+            false,
+            content,
+            true,
+            nextExtendedPreferences,
+          );
+          appendAssistantMessage(getCommerceReply(commerceData));
+        }
+      } else if (conversationStage === "collecting-context") {
         setConversationStage("ready");
         await answerWithCollectedContext(
           pendingUserRequest || content,
@@ -2621,7 +3761,9 @@ export function KaprukaGenieApp() {
         await handleReadyMessage(content);
       }
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      if (!addRetryFailure(error, content)) {
+        setStatus(getErrorMessage(error));
+      }
     } finally {
       setActivityMessage("");
       setIsSending(false);
@@ -2657,6 +3799,7 @@ export function KaprukaGenieApp() {
         body: JSON.stringify({
           language,
           mode: "Product Compare",
+          productIds: ids,
           profile: normalizeShoppingProfile(profile),
           query: ids.join(" "),
           task: "compare",
@@ -2678,18 +3821,15 @@ export function KaprukaGenieApp() {
       );
       const rows = (data.products ?? []).slice(0, 2).map((product) => ({
         product,
-        suggestion:
-          recommendations.get(product.id) ||
-          data.reply ||
-          "AI suggestion unavailable.",
+        suggestion: recommendations.get(product.id) || data.reply || "",
       }));
 
       setCompareRows(rows);
-      setCompareSuggestion(data.reply ?? "");
+      setCompareSuggestion(data.reply || "");
       setStatus(
         rows.length >= 2
           ? "Product comparison table ready."
-          : (data.reply ?? "Could not match two products for comparison."),
+          : (data.reply || "Product comparison table ready."),
       );
     } catch (error) {
       const message =
@@ -2736,8 +3876,8 @@ export function KaprukaGenieApp() {
         throw new Error(data.error ?? "Order tracking failed.");
       }
 
-      setTrackingResult(data.tracking ?? "No tracking update returned.");
-      setTrackingSuggestion(data.reply ?? "");
+      setTrackingResult(data.tracking || "");
+      setTrackingSuggestion(data.reply || "");
       setStatus("Order tracking result ready.");
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -2782,7 +3922,11 @@ export function KaprukaGenieApp() {
         throw new Error(data.error ?? "Gift message generation failed.");
       }
 
-      setGiftMessage(data.giftMessage || giftMessage);
+      if (!data.giftMessage?.trim()) {
+        throw new Error("No updated gift message was returned. Please try again.");
+      }
+
+      setGiftMessage(data.giftMessage);
       setStatus("Gift message ready.");
     } catch (error) {
       setStatus(getErrorMessage(error));
@@ -2822,9 +3966,14 @@ export function KaprukaGenieApp() {
 
   async function handleClearHistory() {
     const nextSession = getDefaultModeSession(activeMode);
+    const preservedProducts = recommendedProducts;
 
     setModeSessions({});
-    applyModeSession(nextSession);
+    applyModeSession({
+      ...nextSession,
+      fitReasons: {},
+      recommendedProducts: preservedProducts,
+    });
     resetToolPanels();
     setStatus("Chat history cleared.");
 
@@ -2837,10 +3986,12 @@ export function KaprukaGenieApp() {
 
   function openCheckoutModal() {
     if (buyBox.length === 0) {
+      setCheckoutWarning(getEmptyCartWarning());
       setStatus("Add at least one live Kapruka product before checkout.");
       return;
     }
 
+    setCheckoutWarning("");
     setCheckoutUrl("");
     setIsCheckoutModalOpen(true);
   }
@@ -2853,11 +4004,13 @@ export function KaprukaGenieApp() {
     }
 
     if (buyBox.length === 0) {
+      setCheckoutWarning(getEmptyCartWarning());
       setStatus("Add at least one live Kapruka product before checkout.");
       return;
     }
 
     setIsCheckoutCreating(true);
+    setCheckoutWarning("");
     setCheckoutUrl("");
     setStatus("Kapruka MCP is creating a guest-checkout link.");
 
@@ -2904,6 +4057,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     const formData = new FormData();
     formData.append("image", file);
     setActivityMessage(text.uploadingImage);
@@ -2926,10 +4080,19 @@ export function KaprukaGenieApp() {
         role: "assistant",
         content: getImageSearchReply(data),
       });
-      await runCommerce(query);
-      setStatus("Groq image analysis complete. Kapruka MCP products updated.");
+      await runCommerce(query, activeMode, profile, false);
+      setStatus(
+        data.fallback
+          ? "Image upload used a best-effort fallback search. Kapruka MCP products updated."
+          : "Groq image analysis complete. Kapruka MCP products updated.",
+      );
     } catch (error) {
-      setStatus(getErrorMessage(error));
+      const message = getErrorMessage(error);
+      addMessage({
+        role: "assistant",
+        content: `Image upload did not complete: ${message}`,
+      });
+      setStatus(message);
     } finally {
       setActivityMessage("");
       setIsImageProcessing(false);
@@ -2948,6 +4111,7 @@ export function KaprukaGenieApp() {
     }
 
     try {
+      setIsComposerMenuOpen(false);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
@@ -3019,6 +4183,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     shouldSendRecordingRef.current = false;
     mediaRecorderRef.current.stop();
   }
@@ -3028,6 +4193,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    setIsComposerMenuOpen(false);
     shouldSendRecordingRef.current = true;
     setIsVoiceProcessing(true);
     setActivityMessage(text.transcribingVoice);
@@ -3038,9 +4204,7 @@ export function KaprukaGenieApp() {
   async function transcribeVoice(file: File) {
     const formData = new FormData();
     formData.append("audio", file);
-    if (language === "Sinhala") {
-      formData.append("language", "si");
-    }
+    formData.append("language", "en");
     setIsVoiceProcessing(true);
     setActivityMessage(text.transcribingVoice);
 
@@ -3052,12 +4216,20 @@ export function KaprukaGenieApp() {
       const data = (await response.json()) as VoiceResponse;
 
       if (!response.ok) {
+        if (data.retry) {
+          addMessage({ role: "assistant", content: text.voiceRetry });
+          setStatus(text.voiceRetry);
+          return;
+        }
+
         throw new Error(data.error ?? "Groq transcription failed.");
       }
 
       const transcript = data.transcript ?? "";
       if (!transcript) {
-        throw new Error("Groq returned an empty transcript.");
+        addMessage({ role: "assistant", content: text.voiceRetry });
+        setStatus(text.voiceRetry);
+        return;
       }
 
       setInput("");
@@ -3073,49 +4245,107 @@ export function KaprukaGenieApp() {
     }
   }
 
-  async function speakLastReply() {
-    const lastReply = [...messages]
-      .reverse()
-      .find((message) => message.role === "assistant")?.content;
-
-    if (!lastReply || isSpeaking) {
+  async function speakMessage(messageText: string) {
+    if (!messageText.trim() || isSpeaking) {
       return;
     }
 
-    setIsSpeaking(true);
-    setActivityMessage(text.processing);
-    setStatus("Groq is generating voice output.");
-
-    try {
-      const response = await fetch("/api/ai/voice-messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ text: lastReply.slice(0, 1000) }),
-      });
-
-      if (!response.ok) {
-        const data = (await response.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(data?.error ?? "Groq speech request failed.");
-      }
-
-      if (playbackUrlRef.current) {
-        URL.revokeObjectURL(playbackUrlRef.current);
-      }
-
-      const audioUrl = URL.createObjectURL(await response.blob());
-      playbackUrlRef.current = audioUrl;
-      new Audio(audioUrl).play();
-      setStatus("Groq voice reply generated.");
-    } catch (error) {
-      setStatus(getErrorMessage(error));
-    } finally {
-      setActivityMessage("");
-      setIsSpeaking(false);
+    if (
+      typeof window === "undefined" ||
+      !("speechSynthesis" in window) ||
+      typeof SpeechSynthesisUtterance === "undefined"
+    ) {
+      setStatus("Read-aloud is not available in this browser.");
+      return;
     }
+
+    const femaleVoicePattern =
+      /female|amy|aria|ava|emma|fiona|hazel|ivy|joanna|jenny|karen|kendra|kimberly|libby|maisie|michelle|moira|natasha|olivia|salli|samantha|sara|serena|shelley|sonia|susan|tessa|victoria|zira|google us english/i;
+    const naturalVoicePattern = /enhanced|google|microsoft|natural|neural|premium/i;
+    const speechSynthesis = window.speechSynthesis;
+    const hasFemaleEnglishVoice = (voices: SpeechSynthesisVoice[]) =>
+      voices.some(
+        (voice) =>
+          voice.lang.toLowerCase().startsWith("en") &&
+          femaleVoicePattern.test(`${voice.name} ${voice.voiceURI}`),
+      );
+
+    speechSynthesis.cancel();
+    setIsSpeaking(true);
+    setStatus("Loading a female English voice.");
+
+    let voices = speechSynthesis.getVoices();
+    if (!hasFemaleEnglishVoice(voices)) {
+      await new Promise<void>((resolve) => {
+        const finishLoading = () => {
+          window.clearTimeout(timeoutId);
+          speechSynthesis.removeEventListener("voiceschanged", finishLoading);
+          resolve();
+        };
+        const timeoutId = window.setTimeout(finishLoading, 1200);
+        speechSynthesis.addEventListener("voiceschanged", finishLoading, {
+          once: true,
+        });
+      });
+      voices = speechSynthesis.getVoices();
+    }
+
+    const femaleEnglishVoices = voices.filter(
+      (voice) =>
+        voice.lang.toLowerCase().startsWith("en") &&
+        femaleVoicePattern.test(`${voice.name} ${voice.voiceURI}`),
+    );
+    const getVoiceScore = (voice: SpeechSynthesisVoice) => {
+      const locale = voice.lang.toLowerCase();
+      const voiceIdentity = `${voice.name} ${voice.voiceURI}`;
+      const localeScore = locale.startsWith("en-lk")
+        ? 40
+        : locale.startsWith("en-gb")
+          ? 35
+          : locale.startsWith("en-us")
+            ? 30
+            : locale.startsWith("en-in")
+              ? 25
+              : 10;
+
+      return (
+        localeScore +
+        (femaleVoicePattern.test(voiceIdentity) ? 100 : 0) +
+        (naturalVoicePattern.test(voiceIdentity) ? 10 : 0) +
+        (voice.default ? 2 : 0)
+      );
+    };
+    const preferredVoice = [...femaleEnglishVoices].sort(
+      (firstVoice, secondVoice) =>
+        getVoiceScore(secondVoice) - getVoiceScore(firstVoice),
+    )[0];
+
+    if (!preferredVoice) {
+      setIsSpeaking(false);
+      setStatus("No female English voice is installed in this browser.");
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(
+      messageText.trim().slice(0, 1200),
+    );
+
+    utterance.lang = preferredVoice.lang;
+    utterance.rate = 0.96;
+    utterance.pitch = 1.05;
+    utterance.voice = preferredVoice;
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setStatus("Finished reading the latest message.");
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setStatus("The browser could not read this message aloud.");
+    };
+
+    setStatus("Reading the latest message aloud.");
+    speechSynthesis.speak(utterance);
   }
 
   function renderContextPanel(isActive: boolean) {
@@ -3281,6 +4511,128 @@ export function KaprukaGenieApp() {
           </div>
         </section>
       </div>
+      {selectedProduct ? (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-[#161226]/45 px-4 py-6 backdrop-blur-sm">
+          <button
+            type="button"
+            aria-label="Close product details"
+            onClick={() => setSelectedProduct(null)}
+            className="absolute inset-0 cursor-default"
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-details-title"
+            className="relative z-10 max-h-full w-full max-w-3xl overflow-auto rounded-[22px] border border-[#e8e2f2] bg-white shadow-[0_24px_70px_rgba(44,22,75,0.28)]"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[#e8e2f2] p-5">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-[#7b3fb1]">
+                  Product details
+                </p>
+                <h2
+                  id="product-details-title"
+                  className="mt-1 text-xl font-black text-[#3f246d]"
+                >
+                  {selectedProduct.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(null)}
+                className="grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[12px] border border-[#e8e2f2] text-[#3f246d]"
+                aria-label="Close product details"
+              >
+                <Icon name="x" className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,280px)_1fr]">
+              <div className="relative aspect-square overflow-hidden rounded-[18px] bg-[#eee9f5]">
+                <Image
+                  src={selectedProduct.imageUrl}
+                  alt={selectedProduct.name}
+                  fill
+                  unoptimized
+                  sizes="280px"
+                  className="object-cover"
+                />
+              </div>
+              <div className="grid content-start gap-4">
+                <dl className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Product ID</dt>
+                    <dd className="mt-1 break-all font-black text-[#3f246d]">
+                      {selectedProduct.id}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Category</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.category}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Price</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {formatPrice(
+                        selectedProduct.price,
+                        selectedProduct.currency,
+                      )}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Availability</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.stockLabel}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Stock count</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.stock}
+                    </dd>
+                  </div>
+                  <div className="rounded-[14px] bg-[#f6f4fb] p-3">
+                    <dt className="font-bold text-[#8a8299]">Delivery</dt>
+                    <dd className="mt-1 font-black text-[#3f246d]">
+                      {selectedProduct.eta}
+                    </dd>
+                  </div>
+                </dl>
+                <div>
+                  <h3 className="text-sm font-black text-[#3f246d]">
+                    Description
+                  </h3>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#675f79]">
+                    {selectedProduct.description}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    disabled={isSelectedProductInCart}
+                    onClick={() => addToBuyBox(selectedProduct)}
+                    className="h-11 rounded-[12px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-default disabled:opacity-60"
+                  >
+                    {isSelectedProductInCart
+                      ? "Added to Cart"
+                      : text.addToBuyBox}
+                  </button>
+                  <a
+                    href={selectedProduct.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="grid h-11 place-items-center rounded-[12px] border border-[#e8e2f2] px-4 text-sm font-black text-[#3f246d] transition hover:bg-[#f6f4fb]"
+                  >
+                    Open on Kapruka
+                  </a>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {isCheckoutModalOpen ? (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-[#161226]/45 px-4 py-6 backdrop-blur-sm">
           <button
@@ -3501,9 +4853,6 @@ export function KaprukaGenieApp() {
             </button>
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-2 md:justify-end">
-            <div className="min-w-0 rounded-[18px] border border-[#e8e2f2] bg-white px-4 py-3 text-sm font-bold text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.07)] md:max-w-[440px]">
-              {status}
-            </div>
             <Link
               href="/features"
               className="hidden h-11 place-items-center rounded-[13px] border border-[#e8e2f2] bg-white px-4 text-sm font-black text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.05)] xl:grid"
@@ -3628,10 +4977,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.budget}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        budget: event.target.value,
-                      }))
+                      updateSelectedPreference("budget", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -3648,10 +4994,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.recipient}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        recipient: event.target.value,
-                      }))
+                      updateSelectedPreference("recipient", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -3668,10 +5011,7 @@ export function KaprukaGenieApp() {
                   <select
                     value={profile.occasion}
                     onChange={(event) =>
-                      setProfile((current) => ({
-                        ...current,
-                        occasion: event.target.value,
-                      }))
+                      updateSelectedPreference("occasion", event.target.value)
                     }
                     className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
                   >
@@ -3683,14 +5023,48 @@ export function KaprukaGenieApp() {
                     ))}
                   </select>
                 </label>
+                <label className="grid gap-1 font-bold text-[#675f79]">
+                  {getContextFieldLabel("category")}
+                  <select
+                    value={profile.category}
+                    onChange={(event) =>
+                      updateSelectedPreference("category", event.target.value)
+                    }
+                    className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
+                  >
+                    <option value="">{getContextFieldLabel("category")}</option>
+                    {giftTypeOptions.map((giftType) => (
+                      <option key={giftType} value={giftType}>
+                        {getOptionLabel(giftType)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
+              <button
+                type="button"
+                disabled={
+                  isSending ||
+                  activeMode !== "Smart Shopping" ||
+                  !(
+                    profile.budget ||
+                    profile.recipient ||
+                    profile.occasion ||
+                    profile.category
+                  )
+                }
+                onClick={() => void handleSidebarPreferenceSubmit()}
+                className="mt-4 h-11 w-full rounded-[14px] bg-[#ffdf00] px-4 text-sm font-black text-[#1a0f2e] disabled:cursor-not-allowed disabled:bg-[#ece7f5] disabled:text-[#8a8299] disabled:opacity-100"
+              >
+                {isSending ? text.sendingContext : text.sendContext}
+              </button>
             </div>
           </aside>
 
           <section className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[18px] border border-[#e8e2f2] bg-[linear-gradient(180deg,#fff_0%,#fbf9ff_100%)] shadow-[0_12px_32px_rgba(44,22,75,0.07)]">
             <div className="flex items-center justify-between border-b border-[#e8e2f2] p-5 font-black">
               <span>{activeMode}</span>
-              <div className="flex items-center gap-3 [&>span.text-sm]:hidden">
+              <div className="ml-auto flex items-center justify-end gap-1.5 md:gap-3 [&>span.text-sm]:hidden">
                 <span className="sr-only">{text.language}</span>
                 <label className="sr-only" htmlFor="chat-language">
                   {text.language}
@@ -3701,7 +5075,7 @@ export function KaprukaGenieApp() {
                   onChange={(event) =>
                     handleLanguageChange(event.target.value as Language)
                   }
-                  className="h-10 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d] outline-none"
+                  className="h-10 w-[92px] rounded-[12px] border border-[#e8e2f2] bg-white px-2 text-sm font-black text-[#3f246d] outline-none md:w-auto md:px-3"
                 >
                   {languageOptions.map((option) => (
                     <option key={option} value={option}>
@@ -3712,19 +5086,30 @@ export function KaprukaGenieApp() {
                 <button
                   type="button"
                   onClick={() => void handleClearHistory()}
-                  className="flex h-10 items-center gap-2 rounded-[12px] border border-[#e8e2f2] bg-white px-3 text-sm font-black text-[#3f246d]"
+                  className="grid h-9 w-9 place-items-center rounded-[12px] border border-[#e8e2f2] bg-white text-sm font-black text-[#3f246d] md:flex md:h-10 md:w-auto md:items-center md:gap-2 md:px-3"
                   title={text.clearHistory}
+                  aria-label={text.clearHistory}
                 >
                   <Icon name="trash" className="h-4 w-4" />
-                  <span>{text.clearHistory}</span>
+                  <span className="hidden md:inline">{text.clearHistory}</span>
                 </button>
-                <span className="flex items-center gap-1 text-[14px] text-[#18a058]">
-                  <Icon name="check" className="h-4 w-4" /> {text.active}
+                <span
+                  className="flex h-9 w-9 items-center justify-center rounded-[12px] text-[#18a058] md:h-auto md:w-auto md:gap-1 md:rounded-none md:text-[14px]"
+                  title={text.active}
+                  aria-label={text.active}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#18a058] md:hidden" />
+                  <span className="hidden items-center gap-1 md:flex">
+                    <Icon name="check" className="h-4 w-4" /> {text.active}
+                  </span>
                 </span>
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-4 sm:p-6">
+            <div
+              ref={chatScrollContainerRef}
+              className="flex-1 overflow-auto p-4 sm:p-6"
+            >
               {isCompareMode ? (
                 renderCompareTool()
               ) : isTrackingMode ? (
@@ -3738,23 +5123,71 @@ export function KaprukaGenieApp() {
                   const isContextPanel = message.variant === "context-panel";
                   const isActiveContextPanel =
                     isContextPanel && conversationStage === "collecting-context";
+                  const isLatestAssistantMessage =
+                    message.role === "assistant" &&
+                    index === latestAssistantMessageIndex;
 
                   return (
                     <div
                       key={`${message.role}-${index}`}
-                      className={`min-w-0 rounded-[19px] break-words text-sm leading-6 shadow-[0_8px_18px_rgba(44,22,75,0.06)] [overflow-wrap:anywhere] ${
-                        isContextPanel
-                          ? "w-full max-w-[760px] rounded-bl-[5px] border border-[#e8e2f2] bg-[#fbf9ff] p-4"
-                          : `w-fit max-w-[82%] px-4 py-3 ${
-                              message.role === "user"
-                                ? "ml-auto rounded-br-[5px] bg-[#3f246d] text-white"
-                                : "rounded-bl-[5px] bg-[#f0e9fb]"
-                            }`
+                      className={`flex min-w-0 items-end gap-2 ${
+                        message.role === "user" ? "justify-end" : "justify-start"
                       }`}
                     >
-                      {isContextPanel
-                        ? renderContextPanel(isActiveContextPanel)
-                        : renderChatMessage(message.content)}
+                      <div
+                        className={`min-w-0 rounded-[19px] break-words text-sm leading-6 shadow-[0_8px_18px_rgba(44,22,75,0.06)] [overflow-wrap:anywhere] ${
+                          isContextPanel
+                            ? "w-full max-w-[760px] rounded-bl-[5px] border border-[#e8e2f2] bg-[#fbf9ff] p-4"
+                            : `w-fit max-w-[82%] px-4 py-3 ${
+                                message.role === "user"
+                                  ? "rounded-br-[5px] bg-[#3f246d] text-white"
+                                  : "rounded-bl-[5px] bg-[#f0e9fb]"
+                              }`
+                        }`}
+                      >
+                        {isContextPanel ? (
+                          renderContextPanel(isActiveContextPanel)
+                        ) : (
+                          <>
+                            {renderChatMessage(message.content)}
+                            {message.retryReason === "timeout" &&
+                            message.retryText ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  disabled={isSending}
+                                  onClick={() => void handleRetryMessage(message)}
+                                  className="rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {getTryAgainLabel()}
+                                </button>
+                                {language !== "English" ? (
+                                  <button
+                                    type="button"
+                                    disabled={isSending}
+                                    onClick={() => handleLanguageChange("English")}
+                                    className="rounded-[10px] border border-[#3f246d] bg-white px-3 py-2 text-xs font-black text-[#3f246d] transition hover:bg-[#3f246d] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {getSwitchToEnglishLabel()}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                      {isLatestAssistantMessage && language === "English" ? (
+                        <button
+                          type="button"
+                          onClick={() => void speakMessage(message.content)}
+                          disabled={isSpeaking}
+                          className="grid h-9 w-9 flex-none place-items-center rounded-full border border-[#e8e2f2] bg-white text-[#3f246d] shadow-[0_6px_14px_rgba(44,22,75,0.08)] transition hover:border-[#3f246d] disabled:opacity-40"
+                          title={readAloudTitle}
+                          aria-label={readAloudTitle}
+                        >
+                          <Icon name="speaker" className="h-4 w-4" />
+                        </button>
+                      ) : null}
                     </div>
                   );
                 })}
@@ -3768,19 +5201,22 @@ export function KaprukaGenieApp() {
                 ) : null}
               </div>
 
-              <div className="mt-5 flex flex-wrap gap-2">
-                {chips.map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => handleChipClick(chip)}
-                    className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
-                  >
-                    {getChipLabel(chip)}
-                  </button>
-                ))}
-              </div>
+              {!isGuidedMode ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {visibleReplyChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => handleChipClick(chip)}
+                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                    >
+                      {getChipLabel(chip)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
+              {shouldShowProductSuggestions ? (
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 {recommendedProducts.length === 0 && isLoadingInitialProducts
                   ? [0, 1, 2].map((item) => (
@@ -3812,7 +5248,7 @@ export function KaprukaGenieApp() {
                 {visibleProducts.map((product) => (
                   <article
                     key={product.id}
-                    className="overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                    className="flex h-full flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
                   >
                     <div className="relative h-44 overflow-hidden bg-[#eee9f5]">
                       <Image
@@ -3824,7 +5260,7 @@ export function KaprukaGenieApp() {
                         className="object-cover"
                       />
                     </div>
-                    <div className="p-3">
+                    <div className="flex flex-1 flex-col p-3">
                       <div className="flex items-start justify-between gap-2">
                         <h3 className="text-sm font-black">{product.name}</h3>
                         <span className="rounded-lg bg-[#f6f4fb] px-2 py-1 text-[11px] font-black text-[#3f246d]">
@@ -3834,8 +5270,8 @@ export function KaprukaGenieApp() {
                       <p className="mt-1 font-mono text-[11px] font-bold text-[#8a8299]">
                         ID: {product.id}
                       </p>
-                      <p className="mt-2 text-xs leading-5 text-[#675f79]">
-                        {fitReasons[product.id] ?? product.description}
+                      <p className="mt-2 h-[60px] overflow-hidden text-xs leading-5 text-[#675f79]">
+                        {product.description}
                       </p>
                       <div className="mt-3 flex items-center justify-between gap-2">
                         <span className="font-black text-[#3f246d]">
@@ -3845,7 +5281,7 @@ export function KaprukaGenieApp() {
                           {product.stockLabel}
                         </span>
                       </div>
-                      <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+                      <div className="mt-auto grid grid-cols-[1fr_auto] gap-2 pt-3">
                         <button
                           type="button"
                           onClick={() => addToBuyBox(product)}
@@ -3853,25 +5289,44 @@ export function KaprukaGenieApp() {
                         >
                           {text.addToBuyBox}
                         </button>
-                        <a
-                          href={product.url}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => setSelectedProduct(product)}
                           className="grid h-10 place-items-center rounded-[10px] border border-[#e8e2f2] px-3 text-sm font-black text-[#3f246d]"
                         >
                           {text.productView}
-                        </a>
+                        </button>
                       </div>
                     </div>
                   </article>
                 ))}
               </div>
+              ) : null}
+              {isGuidedMode ? (
+                <div className="mt-5 flex flex-wrap justify-center gap-2 border-t border-[#e8e2f2] pt-4">
+                  {visibleReplyChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => handleChipClick(chip)}
+                      className="rounded-full border border-[#e8e2f2] bg-white px-4 py-2 text-sm font-black text-[#3f246d]"
+                    >
+                      {getChipLabel(chip)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
                 </>
               )}
             </div>
 
             {(isRecording || isVoiceProcessing || isImageProcessing) ? (
               <div className="absolute bottom-[88px] left-1/2 z-20 w-[min(92%,460px)] -translate-x-1/2 rounded-[16px] border border-[#e8e2f2] bg-white/95 px-4 py-3 text-sm font-black text-[#3f246d] shadow-[0_16px_40px_rgba(44,22,75,0.16)] backdrop-blur">
+                {isRecording || isVoiceProcessing ? (
+                  <p className="mb-2 rounded-[10px] bg-[#f0e9fb] px-3 py-2 text-xs font-bold text-[#675f79]">
+                    {text.voiceEnglishOnly}
+                  </p>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-3">
                   <span
                     className={`h-3 w-3 rounded-full ${
@@ -3914,65 +5369,104 @@ export function KaprukaGenieApp() {
               </div>
             ) : null}
 
-            {!isFormToolMode ? (
+            {!isFormToolMode && !isGuidedMode ? (
               <form
                 onSubmit={(event) => void handleSubmit(event)}
-                className="flex flex-wrap gap-2 border-t border-[#e8e2f2] bg-white p-4"
+                className="relative border-t border-[#e8e2f2] bg-white p-4"
               >
-              <input
-                ref={imageInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(event) => void handleImageChange(event)}
-                className="hidden"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (!isRecording) {
-                    void startRecording();
-                  }
-                }}
-                disabled={isVoiceProcessing}
-                className={`grid h-12 w-12 place-items-center rounded-[15px] border text-[0px] ${
-                  isRecording
-                    ? "border-[#3f246d] bg-[#3f246d] text-white"
-                    : "border-[#e8e2f2] bg-white"
-                } disabled:opacity-40`}
-                title="Voice input"
-              >
-                <Icon name="mic" />
-              </button>
-              <button
-                type="button"
-                onClick={() => imageInputRef.current?.click()}
-                className="grid h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white text-[0px]"
-                title="Upload image"
-              >
-                <Icon name="camera" />
-              </button>
-              <button
-                type="button"
-                onClick={() => void speakLastReply()}
-                disabled={isSpeaking}
-                className="grid h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white text-[0px] disabled:opacity-40"
-                title="Voice reply"
-              >
-                <Icon name="speaker" />
-              </button>
-              <input
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                placeholder={text.askPlaceholder}
-                className="h-12 min-w-0 flex-1 basis-full rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79] md:basis-auto"
-              />
-                <button
-                  type="submit"
-                  disabled={isSending || input.trim().length === 0}
-                  className="h-12 rounded-[15px] bg-[#ffdf00] px-6 text-sm font-black text-[#1a0f2e] disabled:opacity-50"
-                >
-                  {isSending ? text.sending : text.send}
-                </button>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => void handleImageChange(event)}
+                  className="hidden"
+                />
+                {isComposerMenuOpen ? (
+                  <div className="absolute bottom-[calc(100%+10px)] left-4 z-20 flex flex-col gap-2 rounded-[16px] border border-[#e8e2f2] bg-white p-2 shadow-[0_16px_40px_rgba(44,22,75,0.16)] md:hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!isRecording) {
+                          void startRecording();
+                        }
+                      }}
+                      disabled={isVoiceProcessing}
+                      className={`flex h-11 items-center gap-2 rounded-[12px] px-3 text-sm font-black ${
+                        isRecording
+                          ? "bg-[#3f246d] text-white"
+                          : "bg-[#f6f4fb] text-[#3f246d]"
+                      } disabled:opacity-40`}
+                    >
+                      <Icon name="mic" className="h-4 w-4" />
+                      <span>Voice</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="flex h-11 items-center gap-2 rounded-[12px] bg-[#f6f4fb] px-3 text-sm font-black text-[#3f246d]"
+                    >
+                      <Icon name="camera" className="h-4 w-4" />
+                      <span>Image</span>
+                    </button>
+                  </div>
+                ) : null}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsComposerMenuOpen((current) => !current)}
+                    className="grid h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white md:hidden"
+                    aria-label="Open upload options"
+                  >
+                    <Icon name={isComposerMenuOpen ? "x" : "plus"} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isRecording) {
+                        void startRecording();
+                      }
+                    }}
+                    disabled={isVoiceProcessing}
+                    className={`hidden h-12 w-12 place-items-center rounded-[15px] border text-[0px] md:grid ${
+                      isRecording
+                        ? "border-[#3f246d] bg-[#3f246d] text-white"
+                        : "border-[#e8e2f2] bg-white"
+                    } disabled:opacity-40`}
+                    title={text.voiceEnglishOnly}
+                  >
+                    <Icon name="mic" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className="hidden h-12 w-12 place-items-center rounded-[15px] border border-[#e8e2f2] bg-white text-[0px] md:grid"
+                    title="Upload image"
+                  >
+                    <Icon name="camera" />
+                  </button>
+                  <input
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onFocus={() => setIsComposerMenuOpen(false)}
+                    placeholder={text.askPlaceholder}
+                    className="h-12 min-w-0 flex-1 rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSending || input.trim().length === 0}
+                    className="grid h-12 w-12 place-items-center rounded-[15px] bg-[#ffdf00] text-[#1a0f2e] disabled:opacity-50 md:hidden"
+                    aria-label={isSending ? text.sending : text.send}
+                  >
+                    <Icon name="send" />
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSending || input.trim().length === 0}
+                    className="hidden h-12 rounded-[15px] bg-[#ffdf00] px-6 text-sm font-black text-[#1a0f2e] disabled:opacity-50 md:block"
+                  >
+                    {isSending ? text.sending : text.send}
+                  </button>
+                </div>
               </form>
             ) : null}
           </section>
@@ -4054,6 +5548,11 @@ export function KaprukaGenieApp() {
               >
                 {text.createOrderLink}
               </button>
+              {checkoutWarning ? (
+                <p className="mt-2 text-xs font-semibold text-[#ffe082]">
+                  {checkoutWarning}
+                </p>
+              ) : null}
             </div>
             </div>
 
