@@ -263,21 +263,21 @@ const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
     {
       role: "assistant",
       content:
-        "Ayubowan! මම Kapruka Genie. ඔබට අවශ්‍ය gift එක කියන්න, මම ඔයාව guide කරන්නම්.",
+        "Ayubowan! මම Kapruka Genie. 💫 ඔබට අවශ්‍ය gift එක කියන්න, මම ඔයාව guide කරන්නම්. 🙂",
     },
   ],
   Singlish: [
     {
       role: "assistant",
       content:
-        "Ayubowan! Mama Kapruka Genie. Oyata ona gift eka kiyanna, mama oyawa guide karannam.",
+        "Ayubowan! Mama Kapruka Genie. 💫 Oyata ona gift eka kiyanna, mama oyawa guide karannam. 🙂",
     },
   ],
   Tanglish: [
     {
       role: "assistant",
       content:
-        "Vanakkam! Naan Kapruka Genie. Neenga thedura gift pathi sollunga, naan unga details guide pannren.",
+        "Vanakkam! Naan Kapruka Genie. 💫 Neenga thedura gift pathi sollunga, naan unga details guide pannren. 🙂",
     },
   ],
 };
