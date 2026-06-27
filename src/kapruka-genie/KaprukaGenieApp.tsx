@@ -112,6 +112,11 @@ type GuidedPlanItem = {
   searchTerm: string;
 };
 
+type SuggestedPrompt = {
+  action: "fill" | "custom";
+  text: string;
+};
+
 type GiftMessagePreferences = {
   language: string;
   size: string;
@@ -224,7 +229,7 @@ const starterMessages: ChatMessage[] = [
   {
     role: "assistant",
     content:
-      "Hello! ආයුබෝවන්! Ayubowan! I am Kapruka Genie. Tell me what you are looking for, and I will guide the gift details.",
+      "Hello! ආයුබෝවන්! Ayubowan! I am Kapruka Genie. 💫 Tell me what you are looking for, and I will guide the gift details. 🙂",
   },
 ];
 
@@ -830,7 +835,7 @@ const copy: Record<
     continueWithoutContext: "Continue Without Context",
     contextIntro:
       "I detected details from your message and only need anything missing before answering it.",
-    contextTitle: "Set shopping context",
+    contextTitle: "Set shopping preferences",
     createOrderLink: "Create Order Link",
     date: "Date",
     detectedContext: "Detected context",
@@ -1053,6 +1058,65 @@ const copyOverrides: Record<Language, Partial<Required<(typeof copy)["English"]>
     voiceResume: "Resume",
     voiceStop: "Stop",
   },
+};
+
+const suggestedPromptsByLanguage: Record<Language, SuggestedPrompt[]> = {
+  English: [
+    {
+      action: "fill",
+      text: "Show me red roses between Rs. 2500 - 5000 for my girlfriend's birthday.",
+    },
+    {
+      action: "fill",
+      text: "Can you deliver to Colombo tomorrow?",
+    },
+    {
+      action: "custom",
+      text: "Or enter your custom message.",
+    },
+  ],
+  Sinhala: [
+    {
+      action: "fill",
+      text: "මගේ පෙම්වතියගේ උපන්දිනයට Rs. 2500 - 5000 අතර රතු රෝස මල් පෙන්නන්න.",
+    },
+    {
+      action: "fill",
+      text: "හෙට Colombo වලට delivery කරන්න පුළුවන්ද?",
+    },
+    {
+      action: "custom",
+      text: "නැත්නම් ඔබගේ custom message එක type කරන්න.",
+    },
+  ],
+  Singlish: [
+    {
+      action: "fill",
+      text: "Mage pemwathiyage upandinayata Rs. 2500 - 5000 athara rathu rosa mal pennanna.",
+    },
+    {
+      action: "fill",
+      text: "Heta Colombo walata delivery karanna puluwanda?",
+    },
+    {
+      action: "custom",
+      text: "Nathnam oyage custom message eka type karanna.",
+    },
+  ],
+  Tanglish: [
+    {
+      action: "fill",
+      text: "En girlfriend oda birthday ku Rs. 2500 - 5000 range la red roses kaamikkunga.",
+    },
+    {
+      action: "fill",
+      text: "Naalaikku Colombo ku delivery panna mudiyuma?",
+    },
+    {
+      action: "custom",
+      text: "Illenna unga custom message type pannunga.",
+    },
+  ],
 };
 
 const starterChipLabels: Record<Language, Record<string, string>> = {
@@ -1519,6 +1583,8 @@ export function KaprukaGenieApp() {
   const compareTableTopScrollRef = useRef<HTMLDivElement | null>(null);
   const compareTableBottomScrollRef = useRef<HTMLDivElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldSendRecordingRef = useRef(false);
@@ -1606,6 +1672,7 @@ export function KaprukaGenieApp() {
   const [isGiftMessageGenerating, setIsGiftMessageGenerating] = useState(false);
   const [isIntroPanelVisible, setIsIntroPanelVisible] = useState(false);
   const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
+  const [isPromptPopupOpen, setIsPromptPopupOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
 
   const totals = useMemo(() => {
@@ -1652,6 +1719,33 @@ export function KaprukaGenieApp() {
   const isGuidedMode =
     activeMode.includes("Event") || activeMode.includes("Gift Box");
   const isFormToolMode = isCompareMode || isTrackingMode || isGiftMessageMode;
+  const suggestedPrompts = suggestedPromptsByLanguage[language];
+
+  useEffect(() => {
+    if (!isPromptPopupOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!composerRef.current?.contains(event.target as Node)) {
+        setIsPromptPopupOpen(false);
+      }
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsPromptPopupOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isPromptPopupOpen]);
 
   function closeIntroPanel() {
     setIsIntroPanelVisible(false);
@@ -3888,7 +3982,19 @@ export function KaprukaGenieApp() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsPromptPopupOpen(false);
     await submitText(input);
+  }
+
+  function handleSuggestedPromptClick(prompt: SuggestedPrompt) {
+    if (prompt.action === "fill") {
+      setInput(prompt.text);
+      setIsPromptPopupOpen(false);
+      return;
+    }
+
+    setIsPromptPopupOpen(false);
+    composerInputRef.current?.focus();
   }
 
   async function handleCompareSubmit(event: FormEvent<HTMLFormElement>) {
@@ -4500,9 +4606,9 @@ export function KaprukaGenieApp() {
           <h3 className="text-base font-black text-[#3f246d]">
             {text.contextTitle}
           </h3>
-          <p className="mt-1 text-sm leading-6 text-[#675f79]">
-            {text.contextIntro}
-          </p>
+          {/*<p className="mt-1 text-sm leading-6 text-[#675f79]">*/}
+          {/*  {text.contextIntro}*/}
+          {/*</p>*/}
         </div>
 
         {selectedContextFields.length > 0 ? (
@@ -4552,9 +4658,10 @@ export function KaprukaGenieApp() {
             ))}
           </div>
         ) : (
-          <div className="rounded-[16px] border border-[#e8e2f2] bg-white p-3 text-sm font-bold text-[#675f79]">
-            {text.allContextDetected}
-          </div>
+            <div />
+          // <div className="rounded-[16px] border border-[#e8e2f2] bg-white p-3 text-sm font-bold text-[#675f79]">
+          //   {/*{text.allContextDetected}*/}
+          // </div>
         )}
 
         <div className="grid gap-2 border-t border-[#e8e2f2] pt-4 sm:grid-cols-[1fr_auto]">
@@ -5553,7 +5660,10 @@ export function KaprukaGenieApp() {
                     </button>
                   </div>
                 ) : null}
-                <div className="flex items-center gap-2">
+                <div
+                  ref={composerRef}
+                  className="relative flex items-center gap-2"
+                >
                   <button
                     type="button"
                     onClick={() => setIsComposerMenuOpen((current) => !current)}
@@ -5587,13 +5697,44 @@ export function KaprukaGenieApp() {
                   >
                     <Icon name="camera" />
                   </button>
-                  <input
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    onFocus={() => setIsComposerMenuOpen(false)}
-                    placeholder={text.askPlaceholder}
-                    className="h-12 min-w-0 flex-1 rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79]"
-                  />
+                  <div className="relative min-w-0 flex-1">
+                    {isPromptPopupOpen ? (
+                      <div className="absolute bottom-[calc(100%+0.75rem)] left-[-3.5rem] right-[-3.5rem] z-20 rounded-[18px] border border-[#e8e2f2] bg-white p-2 shadow-[0_18px_40px_rgba(44,22,75,0.16)] md:left-0 md:right-0">
+                        <div className="grid gap-2">
+                          {suggestedPrompts.map((prompt) => (
+                            <button
+                              key={prompt.text}
+                              type="button"
+                              onClick={() => handleSuggestedPromptClick(prompt)}
+                              className={`rounded-[14px] px-4 py-3 text-left text-sm transition ${
+                                prompt.action === "custom"
+                                  ? "border border-dashed border-[#d9d0ea] bg-[#faf8ff] text-[#5a5470]"
+                                  : "bg-[#f6f1ff] text-[#1a0f2e] hover:bg-[#eee6ff]"
+                              }`}
+                            >
+                              {prompt.text}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    <input
+                      ref={composerInputRef}
+                      value={input}
+                      onChange={(event) => {
+                        setInput(event.target.value);
+                        setIsPromptPopupOpen(false);
+                      }}
+                      onFocus={() => {
+                        setIsComposerMenuOpen(false);
+                        if (!input.trim()) {
+                          setIsPromptPopupOpen(true);
+                        }
+                      }}
+                      placeholder={text.askPlaceholder}
+                      className="h-12 min-w-0 w-full rounded-[15px] border border-[#e8e2f2] px-4 outline-none disabled:bg-[#f6f4fb] disabled:text-[#675f79]"
+                    />
+                  </div>
                   <button
                     type="submit"
                     disabled={isSending || input.trim().length === 0}
