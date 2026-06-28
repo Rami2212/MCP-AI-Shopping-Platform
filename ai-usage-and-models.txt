@@ -1,9 +1,7 @@
 KAPRUKA GENIE - AI MODELS
-Checked: 2026-06-25
 
 Default summary
 
-- No model overrides are currently set in `src/.env.local`, so these code defaults are active.
 - Sinhala and Singlish direct chat replies use Hugging Face via Novita with `Qwen/Qwen2.5-72B-Instruct:novita`.
 - English direct chat replies use Groq.
 - Most analysis, ranking, comparison, and tracking tasks use Groq `llama-3.3-70b-versatile`.
