@@ -1585,6 +1585,7 @@ export function KaprukaGenieApp() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLInputElement | null>(null);
+  const productCarouselRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const shouldSendRecordingRef = useRef(false);
@@ -4590,6 +4591,21 @@ export function KaprukaGenieApp() {
     speechSynthesis.speak(utterance);
   }
 
+  function scrollProductCarousel(direction: "next" | "prev") {
+    const container = productCarouselRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const distance = Math.max(container.clientWidth * 0.82, 220);
+
+    container.scrollBy({
+      behavior: "smooth",
+      left: direction === "next" ? distance : -distance,
+    });
+  }
+
   function renderContextPanel(isActive: boolean) {
     const contextFields = getContextFieldsForMode(activeMode);
     const selectedContextFields = contextFields.filter((field) =>
@@ -5076,7 +5092,7 @@ export function KaprukaGenieApp() {
         </div>
       ) : null}
       <section className="flex h-full w-full flex-col gap-3 px-4 py-4">
-        <div className="flex flex-none flex-col justify-between gap-3 md:flex-row md:items-end">
+        <div className="flex flex-none flex-col justify-between gap-1.5 md:flex-row md:items-end md:gap-3">
           <div className="flex w-full items-center justify-between gap-2 md:w-auto">
             <h1 className="mt-1 text-3xl font-black tracking-normal sm:text-4xl">
               <span className="text-[#3f246d]">Kapruka</span>{" "}
@@ -5460,12 +5476,36 @@ export function KaprukaGenieApp() {
               ) : null}
 
               {shouldShowProductSuggestions ? (
-              <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="mt-5">
+                {visibleProducts.length > 1 ? (
+                  <div className="mb-3 flex items-center justify-end gap-2 md:hidden">
+                    <button
+                      type="button"
+                      onClick={() => scrollProductCarousel("prev")}
+                      className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#e8e2f2] bg-white text-base font-black text-[#3f246d]"
+                      aria-label="Show previous product"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollProductCarousel("next")}
+                      className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#e8e2f2] bg-white text-base font-black text-[#3f246d]"
+                      aria-label="Show next product"
+                    >
+                      ›
+                    </button>
+                  </div>
+                ) : null}
+              <div
+                ref={productCarouselRef}
+                className="grid auto-cols-[85%] grid-flow-col gap-3 overflow-x-auto pb-2 snap-x snap-mandatory md:grid-flow-row md:auto-cols-auto md:overflow-visible md:pb-0 md:grid-cols-3"
+              >
                 {recommendedProducts.length === 0 && isLoadingInitialProducts
                   ? [0, 1, 2].map((item) => (
                       <article
                         key={item}
-                        className="overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                        className="snap-start overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)] md:snap-none"
                       >
                         <div className="h-44 animate-pulse bg-[linear-gradient(90deg,#eee9f5_0%,#f8f5fc_45%,#eee9f5_100%)]" />
                         <div className="grid gap-3 p-3">
@@ -5496,7 +5536,7 @@ export function KaprukaGenieApp() {
                   return (
                     <article
                       key={product.id}
-                      className="flex h-full flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)]"
+                      className="flex h-full snap-start flex-col overflow-hidden rounded-[20px] border border-[#e8e2f2] bg-white shadow-[0_10px_24px_rgba(44,22,75,0.07)] md:snap-none"
                     >
                       <div className="relative h-44 overflow-hidden bg-[#eee9f5]">
                         <Image
@@ -5550,6 +5590,7 @@ export function KaprukaGenieApp() {
                     </article>
                   );
                 })}
+              </div>
               </div>
               ) : null}
               {isGuidedMode ? (

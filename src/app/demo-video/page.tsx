@@ -64,6 +64,17 @@ export default function DemoVideoPage() {
           </div>
 
           <section className="overflow-hidden rounded-[22px] border border-[#e8e2f2] bg-white shadow-[0_18px_50px_rgba(44,22,75,0.12)]">
+            <div className="flex justify-end border-b border-[#e8e2f2] bg-[#fbf9ff] px-4 py-3">
+              <Link
+                href={demoVideoUrl || "#"}
+                className="grid h-11 place-items-center rounded-[13px] bg-[#3f246d] px-4 text-sm font-black text-white"
+                target={demoVideoUrl ? "_blank" : undefined}
+                rel={demoVideoUrl ? "noreferrer" : undefined}
+                aria-disabled={!demoVideoUrl}
+              >
+                Open preview
+              </Link>
+            </div>
             <div className="aspect-video bg-[linear-gradient(135deg,#3f246d_0%,#7b3fb1_48%,#ffdf00_100%)] p-1">
               {demoVideoUrl ? (
                 <iframe
@@ -88,21 +99,6 @@ export default function DemoVideoPage() {
                 </div>
               )}
             </div>
-          </section>
-
-          <section className="grid gap-3 md:grid-cols-3">
-            {[
-              "Start a chat request",
-              "Review live product suggestions",
-              "Create checkout-ready details",
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-[18px] border border-[#e8e2f2] bg-white p-4 text-sm font-black text-[#3f246d] shadow-[0_12px_32px_rgba(44,22,75,0.06)]"
-              >
-                {item}
-              </div>
-            ))}
           </section>
         </section>
       </section>
