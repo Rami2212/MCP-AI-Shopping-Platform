@@ -229,7 +229,7 @@ const starterMessages: ChatMessage[] = [
   {
     role: "assistant",
     content:
-      "Hello! ආයුබෝවන්! Ayubowan! I am Kapruka Genie. 💫 Tell me what you are looking for, and I will guide the gift details. 🙂",
+      "Hello! ආයුබෝවන්! Ayubowan! I am Kapruka Genie. 💫 Tell me what you are looking for, and I will guide the gift details. 😊",
   },
 ];
 
@@ -263,21 +263,21 @@ const starterMessagesByLanguage: Record<Language, ChatMessage[]> = {
     {
       role: "assistant",
       content:
-        "Ayubowan! මම Kapruka Genie. 💫 ඔබට අවශ්‍ය gift එක කියන්න, මම ඔයාව guide කරන්නම්. 🙂",
+        "Ayubowan! මම Kapruka Genie. 💫 ඔබට අවශ්‍ය gift එක කියන්න, මම ඔයාව guide කරන්නම්. 😊",
     },
   ],
   Singlish: [
     {
       role: "assistant",
       content:
-        "Ayubowan! Mama Kapruka Genie. 💫 Oyata ona gift eka kiyanna, mama oyawa guide karannam. 🙂",
+        "Ayubowan! Mama Kapruka Genie. 💫 Oyata ona gift eka kiyanna, mama oyawa guide karannam. 😊",
     },
   ],
   Tanglish: [
     {
       role: "assistant",
       content:
-        "Vanakkam! Naan Kapruka Genie. 💫 Neenga thedura gift pathi sollunga, naan unga details guide pannren. 🙂",
+        "Vanakkam! Naan Kapruka Genie. 💫 Neenga thedura gift pathi sollunga, naan unga details guide pannren. 😊",
     },
   ],
 };
@@ -613,6 +613,13 @@ function getLocalDateString(date = new Date()) {
   return localDate.toISOString().slice(0, 10);
 }
 
+function removeEmojiForSpeech(value: string) {
+  return value
+    .replace(/\p{Extended_Pictographic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function getNonPastDate(value: string) {
   const today = getLocalDateString();
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && value >= today
@@ -838,7 +845,7 @@ const copy: Record<
     contextTitle: "Set shopping preferences",
     createOrderLink: "Create Order Link",
     date: "Date",
-    detectedContext: "Detected context",
+    detectedContext: "Detected preferences",
     delivery: "Delivery",
     deliveryInstructions: "Delivery instructions",
     eventPrompt: "Let us plan the event. Add the event details below.",
@@ -1636,6 +1643,10 @@ export function KaprukaGenieApp() {
   const [status, setStatus] = useState(
     "Groq chat and media ready. Kapruka MCP commerce ready.",
   );
+  const [canScrollProductCarouselLeft, setCanScrollProductCarouselLeft] =
+    useState(false);
+  const [canScrollProductCarouselRight, setCanScrollProductCarouselRight] =
+    useState(false);
   const [activityMessage, setActivityMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isImageProcessing, setIsImageProcessing] = useState(false);
@@ -1904,7 +1915,7 @@ export function KaprukaGenieApp() {
     }
 
     if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
-      return `${getGuidedReplyIntro()} ${reply}`;
+      return `${reply}`;
     }
 
     return reply;
@@ -4493,6 +4504,13 @@ export function KaprukaGenieApp() {
       return;
     }
 
+    const spokenText = removeEmojiForSpeech(messageText).slice(0, 1200);
+
+    if (!spokenText) {
+      setStatus("There is no readable text after removing emojis.");
+      return;
+    }
+
     if (
       typeof window === "undefined" ||
       !("speechSynthesis" in window) ||
@@ -4569,9 +4587,7 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(
-      messageText.trim().slice(0, 1200),
-    );
+    const utterance = new SpeechSynthesisUtterance(spokenText);
 
     utterance.lang = preferredVoice.lang;
     utterance.rate = 0.96;
@@ -4590,6 +4606,33 @@ export function KaprukaGenieApp() {
     setStatus("Reading the latest message aloud.");
     speechSynthesis.speak(utterance);
   }
+
+  useEffect(() => {
+    const container = productCarouselRef.current;
+
+    if (!container) {
+      setCanScrollProductCarouselLeft(false);
+      setCanScrollProductCarouselRight(false);
+      return;
+    }
+
+    const updateCarouselControls = () => {
+      const maxScrollLeft = container.scrollWidth - container.clientWidth;
+      const threshold = 8;
+
+      setCanScrollProductCarouselLeft(container.scrollLeft > threshold);
+      setCanScrollProductCarouselRight(maxScrollLeft - container.scrollLeft > threshold);
+    };
+
+    updateCarouselControls();
+    container.addEventListener("scroll", updateCarouselControls, { passive: true });
+    window.addEventListener("resize", updateCarouselControls);
+
+    return () => {
+      container.removeEventListener("scroll", updateCarouselControls);
+      window.removeEventListener("resize", updateCarouselControls);
+    };
+  }, [visibleProducts.length, recommendedProducts.length, isLoadingInitialProducts]);
 
   function scrollProductCarousel(direction: "next" | "prev") {
     const container = productCarouselRef.current;
@@ -4680,7 +4723,7 @@ export function KaprukaGenieApp() {
           // </div>
         )}
 
-        <div className="grid gap-2 border-t border-[#e8e2f2] pt-4 sm:grid-cols-[1fr_auto]">
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
           <button
             type="button"
             disabled={!isActive || isSending || !hasSelectedContext}
@@ -5476,24 +5519,30 @@ export function KaprukaGenieApp() {
               ) : null}
 
               {shouldShowProductSuggestions ? (
-              <div className="mt-5">
+              <div className="relative mt-5">
                 {visibleProducts.length > 1 ? (
-                  <div className="mb-3 flex items-center justify-end gap-2 md:hidden">
+                  <div className="pointer-events-none absolute inset-x-2 top-[36%] z-10 flex -translate-y-1/2 items-center justify-between md:hidden">
                     <button
                       type="button"
                       onClick={() => scrollProductCarousel("prev")}
-                      className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#e8e2f2] bg-white text-base font-black text-[#3f246d]"
+                      disabled={!canScrollProductCarouselLeft}
+                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show previous product"
                     >
-                      ‹
+                      <span aria-hidden="true" className="text-white">
+                        {"‹"}
+                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={() => scrollProductCarousel("next")}
-                      className="grid h-9 w-9 place-items-center rounded-[10px] border border-[#e8e2f2] bg-white text-base font-black text-[#3f246d]"
+                      disabled={!canScrollProductCarouselRight}
+                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show next product"
                     >
-                      ›
+                      <span aria-hidden="true" className="text-white">
+                        {"›"}
+                      </span>
                     </button>
                   </div>
                 ) : null}
