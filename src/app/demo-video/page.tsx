@@ -25,8 +25,8 @@ const demoVideoUrl = getDriveEmbedUrl(
 export default function DemoVideoPage() {
   return (
     <main className="min-h-screen bg-[#f6f4fb] text-[#161226]">
-      <section className="mx-auto grid min-h-screen w-full max-w-6xl gap-8 px-5 py-6 md:px-8">
-        <header className="flex flex-wrap items-center justify-between gap-3">
+      <section className="mx-auto grid w-full max-w-6xl gap-5 px-4 py-4 md:gap-8 md:px-8 md:py-6">
+        <header className="flex flex-wrap items-center justify-between gap-2 md:gap-3">
           <Link
             href="/"
             className="text-2xl font-black tracking-normal text-[#3f246d]"
@@ -49,15 +49,15 @@ export default function DemoVideoPage() {
           </div>
         </header>
 
-        <section className="grid gap-5">
+        <section className="grid gap-4 md:gap-5">
           <div>
             <p className="text-xs font-black uppercase tracking-normal text-[#7b3fb1]">
               Demo video
             </p>
-            <h1 className="mt-2 max-w-3xl text-4xl font-black tracking-normal text-[#3f246d] md:text-6xl">
+            <h1 className="mt-1.5 max-w-3xl text-3xl font-black tracking-normal text-[#3f246d] md:mt-2 md:text-6xl">
               Watch Kapruka Genie in action
             </h1>
-            <p className="mt-4 max-w-2xl text-base font-bold leading-7 text-[#675f79]">
+            <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[#675f79] md:mt-4 md:text-base md:leading-7">
               See how a shopping request becomes product cards, guided context,
               comparisons, gift messages, and checkout preparation.
             </p>
