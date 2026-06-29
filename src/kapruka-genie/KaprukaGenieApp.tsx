@@ -2197,6 +2197,10 @@ export function KaprukaGenieApp() {
 
   function handleLanguageChange(nextLanguage: Language) {
     setLanguage(nextLanguage);
+    setGiftMessagePreferences((current) => ({
+      ...current,
+      language: nextLanguage,
+    }));
     setCheckoutWarning((current) =>
       current ? getEmptyCartWarning(nextLanguage) : current,
     );
