@@ -14,7 +14,7 @@ Active defaults
 - `GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile`
 - `GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile`
 - `GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile`
-- `GROQ_REPLY_MODEL=qwen/qwen3-32b`
+- `GROQ_REPLY_MODEL=openai/gpt-oss-120b`
 - `GROQ_ENGLISH_CHAT_MODEL=openai/gpt-oss-120b`
 - `GROQ_SINHALA_CHAT_MODEL=openai/gpt-oss-120b`
 - `GROQ_SINGLISH_CHAT_MODEL=llama-3.3-70b-versatile`

@@ -40,7 +40,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ```dotenv
 HF_NOVITA_REPLY_MODEL=Qwen/Qwen2.5-72B-Instruct:novita
 HF_NOVITA_REPLY_TIMEOUT_MS=4500
-GROQ_REPLY_MODEL=qwen/qwen3-32b
+GROQ_REPLY_MODEL=openai/gpt-oss-120b
 GROQ_PROCESSING_MODEL=llama-3.3-70b-versatile
 GROQ_CONTEXT_MODEL=llama-3.3-70b-versatile
 GROQ_COMMERCE_MODEL=llama-3.3-70b-versatile
