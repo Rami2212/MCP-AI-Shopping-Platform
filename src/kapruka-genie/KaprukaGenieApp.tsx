@@ -54,6 +54,8 @@ type CommerceResponse = {
   detectedLanguage?: Language;
   eventPlan?: string[];
   extendedPreferences?: ExtendedPreferences;
+  eventUserPreference?: ExtendedPreferences;
+  giftUserPreference?: ExtendedPreferences;
   giftMessage?: string;
   preferences?: {
     budget: string;
@@ -201,6 +203,12 @@ type StoredChatState = {
   recommendedProducts?: Product[];
   activeMode?: string;
   modeSessions?: Record<string, ModeSession>;
+};
+
+type ModePreferencePayload = {
+  eventUserPreference?: ExtendedPreferences;
+  extendedPreferences?: ExtendedPreferences;
+  giftUserPreference?: ExtendedPreferences;
 };
 
 type ModeSession = {
@@ -839,6 +847,41 @@ function normalizeModeSessions(sessions: Record<string, ModeSession>) {
       normalizeModeSession(session),
     ]),
   );
+}
+
+function getPreferenceStateForMode(mode: string) {
+  if (mode.includes("Event")) {
+    return "eventUserPreference" as const;
+  }
+
+  if (mode.includes("Gift Box")) {
+    return "giftUserPreference" as const;
+  }
+
+  return "extendedPreferences" as const;
+}
+
+function getPreferencePayloadForMode(
+  mode: string,
+  preferenceState: ExtendedPreferences,
+): ModePreferencePayload {
+  const key = getPreferenceStateForMode(mode);
+  return { [key]: preferenceState };
+}
+
+function getResponsePreferenceForMode(
+  mode: string,
+  data: CommerceResponse,
+) {
+  if (mode.includes("Event")) {
+    return data.eventUserPreference ?? data.extendedPreferences;
+  }
+
+  if (mode.includes("Gift Box")) {
+    return data.giftUserPreference ?? data.extendedPreferences;
+  }
+
+  return data.extendedPreferences;
 }
 
 const copy: Record<
@@ -1873,6 +1916,13 @@ export function KaprukaGenieApp() {
     return getChipLabel(value);
   }
 
+  function syncSidebarBudgetDraft(nextBudget: string) {
+    const parsedBudget = parseBudgetRangeValue(nextBudget);
+    setSidebarBudgetMin(parsedBudget.min);
+    setSidebarBudgetMax(parsedBudget.max);
+    setSidebarBudgetError("");
+  }
+
   function getContextFieldLabel(field: ContextField) {
     return (
       contextFieldLabelOverrides[language][field] ??
@@ -1970,6 +2020,7 @@ export function KaprukaGenieApp() {
     setMessages(normalizedSession.messages);
     setPendingUserRequest(normalizedSession.pendingUserRequest);
     setProfile(normalizedSession.profile);
+    syncSidebarBudgetDraft(normalizedSession.profile.budget);
     setRecommendedProducts(normalizedSession.recommendedProducts ?? []);
   }
 
@@ -1987,10 +2038,6 @@ export function KaprukaGenieApp() {
 
     if (!reply) {
       return reply;
-    }
-
-    if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
-      return `${reply}`;
     }
 
     return reply;
@@ -3255,6 +3302,7 @@ export function KaprukaGenieApp() {
     data: CommerceResponse,
     applyPreferenceUpdates = false,
   ) {
+    const responsePreferences = getResponsePreferenceForMode(activeMode, data);
     if (data.products) {
       setRecommendedProducts(data.products);
     }
@@ -3315,11 +3363,11 @@ export function KaprukaGenieApp() {
         mergeExtendedPreferencesWithProfile(
           current,
           profileUpdates,
-          data.extendedPreferences,
+          responsePreferences,
         ),
       );
-    } else if (data.extendedPreferences) {
-      const { budget, giftType, occasion, recipient } = data.extendedPreferences;
+    } else if (responsePreferences) {
+      const { budget, giftType, occasion, recipient } = responsePreferences;
       setExtendedPreferences((current) =>
         applyExtendedPreferenceUpdates(current, {
           budget,
@@ -3353,7 +3401,6 @@ export function KaprukaGenieApp() {
         )
         .slice(-3)
         .map(({ content, role }) => ({ content, role })),
-      extendedPreferences: extendedPreferencesOverride,
       language,
       mode,
       profile: requestProfile,
@@ -3361,6 +3408,7 @@ export function KaprukaGenieApp() {
       query,
       task: getTaskForMode(mode),
       userMessage,
+      ...getPreferencePayloadForMode(mode, extendedPreferencesOverride),
     });
 
     try {
@@ -3611,13 +3659,7 @@ export function KaprukaGenieApp() {
         requestProfile,
         false,
       );
-      appendAssistantMessage(
-        `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
-          planItems,
-          0,
-          language,
-        )}`,
-      );
+      appendAssistantMessage(getGuidedPlanReply(planItems, 0, language));
       setChips(getGuidedReplyChips());
       setStatus("Guided suggestions ready.");
       return;
@@ -4345,6 +4387,7 @@ export function KaprukaGenieApp() {
       fitReasons: {},
       recommendedProducts: preservedProducts,
     });
+    syncSidebarBudgetDraft("");
     resetToolPanels();
     setStatus("Chat history cleared.");
 
