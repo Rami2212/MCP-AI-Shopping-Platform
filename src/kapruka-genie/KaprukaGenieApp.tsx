@@ -54,6 +54,8 @@ type CommerceResponse = {
   detectedLanguage?: Language;
   eventPlan?: string[];
   extendedPreferences?: ExtendedPreferences;
+  eventUserPreference?: ExtendedPreferences;
+  giftUserPreference?: ExtendedPreferences;
   giftMessage?: string;
   preferences?: {
     budget: string;
@@ -201,6 +203,12 @@ type StoredChatState = {
   recommendedProducts?: Product[];
   activeMode?: string;
   modeSessions?: Record<string, ModeSession>;
+};
+
+type ModePreferencePayload = {
+  eventUserPreference?: ExtendedPreferences;
+  extendedPreferences?: ExtendedPreferences;
+  giftUserPreference?: ExtendedPreferences;
 };
 
 type ModeSession = {
@@ -627,6 +635,74 @@ function getNonPastDate(value: string) {
     : today;
 }
 
+function formatBudgetAmount(value: number) {
+  return new Intl.NumberFormat("en-LK", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function parseBudgetAmount(value: string) {
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) {
+    return "";
+  }
+
+  const amount = Number(digits);
+  return Number.isFinite(amount) && amount >= 0 ? String(amount) : "";
+}
+
+function parseBudgetRangeValue(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return { max: "", min: "" };
+  }
+
+  if (/^under\s+rs\./i.test(normalized)) {
+    return { max: parseBudgetAmount(normalized), min: "" };
+  }
+
+  if (/^(above|over)\s+rs\./i.test(normalized)) {
+    return { max: "", min: parseBudgetAmount(normalized) };
+  }
+
+  const betweenMatch = normalized.match(/rs\.\s*([\d,]+)\s*-\s*([\d,]+)/i);
+  if (betweenMatch) {
+    return {
+      max: parseBudgetAmount(betweenMatch[2]),
+      min: parseBudgetAmount(betweenMatch[1]),
+    };
+  }
+
+  return { max: "", min: parseBudgetAmount(normalized) };
+}
+
+function buildBudgetRangeValue(min: string, max: string) {
+  const normalizedMin = parseBudgetAmount(min);
+  const normalizedMax = parseBudgetAmount(max);
+
+  if (normalizedMin && normalizedMax) {
+    const minAmount = Number(normalizedMin);
+    const maxAmount = Number(normalizedMax);
+
+    if (minAmount > maxAmount) {
+      return `Rs. ${formatBudgetAmount(maxAmount)} - ${formatBudgetAmount(minAmount)}`;
+    }
+
+    return `Rs. ${formatBudgetAmount(minAmount)} - ${formatBudgetAmount(maxAmount)}`;
+  }
+
+  if (normalizedMin) {
+    return `Above Rs. ${formatBudgetAmount(Number(normalizedMin))}`;
+  }
+
+  if (normalizedMax) {
+    return `Under Rs. ${formatBudgetAmount(Number(normalizedMax))}`;
+  }
+
+  return "";
+}
+
 const initialShoppingProfile: ShoppingProfile = {
   budget: "",
   category: "",
@@ -771,6 +847,41 @@ function normalizeModeSessions(sessions: Record<string, ModeSession>) {
       normalizeModeSession(session),
     ]),
   );
+}
+
+function getPreferenceStateForMode(mode: string) {
+  if (mode.includes("Event")) {
+    return "eventUserPreference" as const;
+  }
+
+  if (mode.includes("Gift Box")) {
+    return "giftUserPreference" as const;
+  }
+
+  return "extendedPreferences" as const;
+}
+
+function getPreferencePayloadForMode(
+  mode: string,
+  preferenceState: ExtendedPreferences,
+): ModePreferencePayload {
+  const key = getPreferenceStateForMode(mode);
+  return { [key]: preferenceState };
+}
+
+function getResponsePreferenceForMode(
+  mode: string,
+  data: CommerceResponse,
+) {
+  if (mode.includes("Event")) {
+    return data.eventUserPreference ?? data.extendedPreferences;
+  }
+
+  if (mode.includes("Gift Box")) {
+    return data.giftUserPreference ?? data.extendedPreferences;
+  }
+
+  return data.extendedPreferences;
 }
 
 const copy: Record<
@@ -1686,6 +1797,13 @@ export function KaprukaGenieApp() {
   const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
   const [isPromptPopupOpen, setIsPromptPopupOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [sidebarBudgetMin, setSidebarBudgetMin] = useState(() =>
+    parseBudgetRangeValue(initialShoppingProfile.budget).min
+  );
+  const [sidebarBudgetMax, setSidebarBudgetMax] = useState(() =>
+    parseBudgetRangeValue(initialShoppingProfile.budget).max
+  );
+  const [sidebarBudgetError, setSidebarBudgetError] = useState("");
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -1798,6 +1916,13 @@ export function KaprukaGenieApp() {
     return getChipLabel(value);
   }
 
+  function syncSidebarBudgetDraft(nextBudget: string) {
+    const parsedBudget = parseBudgetRangeValue(nextBudget);
+    setSidebarBudgetMin(parsedBudget.min);
+    setSidebarBudgetMax(parsedBudget.max);
+    setSidebarBudgetError("");
+  }
+
   function getContextFieldLabel(field: ContextField) {
     return (
       contextFieldLabelOverrides[language][field] ??
@@ -1895,6 +2020,7 @@ export function KaprukaGenieApp() {
     setMessages(normalizedSession.messages);
     setPendingUserRequest(normalizedSession.pendingUserRequest);
     setProfile(normalizedSession.profile);
+    syncSidebarBudgetDraft(normalizedSession.profile.budget);
     setRecommendedProducts(normalizedSession.recommendedProducts ?? []);
   }
 
@@ -1912,10 +2038,6 @@ export function KaprukaGenieApp() {
 
     if (!reply) {
       return reply;
-    }
-
-    if (activeMode.includes("Event") || activeMode.includes("Gift Box")) {
-      return `${reply}`;
     }
 
     return reply;
@@ -3122,6 +3244,47 @@ export function KaprukaGenieApp() {
     );
   }
 
+  function validateSidebarBudgetDraft() {
+    const minValue = sidebarBudgetMin.trim();
+    const maxValue = sidebarBudgetMax.trim();
+    const allowedPattern = /^[\d,\s]*$/;
+
+    if (minValue && !allowedPattern.test(minValue)) {
+      return { budget: "", error: "Min price can only contain numbers." };
+    }
+
+    if (maxValue && !allowedPattern.test(maxValue)) {
+      return { budget: "", error: "Max price can only contain numbers." };
+    }
+
+    const normalizedMin = parseBudgetAmount(minValue);
+    const normalizedMax = parseBudgetAmount(maxValue);
+
+    if (minValue && !normalizedMin) {
+      return { budget: "", error: "Enter a valid minimum price." };
+    }
+
+    if (maxValue && !normalizedMax) {
+      return { budget: "", error: "Enter a valid maximum price." };
+    }
+
+    if (
+      normalizedMin &&
+      normalizedMax &&
+      Number(normalizedMin) > Number(normalizedMax)
+    ) {
+      return {
+        budget: "",
+        error: "Minimum price cannot be greater than maximum price.",
+      };
+    }
+
+    return {
+      budget: buildBudgetRangeValue(normalizedMin, normalizedMax),
+      error: "",
+    };
+  }
+
   function addToBuyBox(product: Product) {
     setCheckoutWarning("");
     setBuyBox((current) =>
@@ -3139,6 +3302,7 @@ export function KaprukaGenieApp() {
     data: CommerceResponse,
     applyPreferenceUpdates = false,
   ) {
+    const responsePreferences = getResponsePreferenceForMode(activeMode, data);
     if (data.products) {
       setRecommendedProducts(data.products);
     }
@@ -3199,11 +3363,11 @@ export function KaprukaGenieApp() {
         mergeExtendedPreferencesWithProfile(
           current,
           profileUpdates,
-          data.extendedPreferences,
+          responsePreferences,
         ),
       );
-    } else if (data.extendedPreferences) {
-      const { budget, giftType, occasion, recipient } = data.extendedPreferences;
+    } else if (responsePreferences) {
+      const { budget, giftType, occasion, recipient } = responsePreferences;
       setExtendedPreferences((current) =>
         applyExtendedPreferenceUpdates(current, {
           budget,
@@ -3237,7 +3401,6 @@ export function KaprukaGenieApp() {
         )
         .slice(-3)
         .map(({ content, role }) => ({ content, role })),
-      extendedPreferences: extendedPreferencesOverride,
       language,
       mode,
       profile: requestProfile,
@@ -3245,6 +3408,7 @@ export function KaprukaGenieApp() {
       query,
       task: getTaskForMode(mode),
       userMessage,
+      ...getPreferencePayloadForMode(mode, extendedPreferencesOverride),
     });
 
     try {
@@ -3495,13 +3659,7 @@ export function KaprukaGenieApp() {
         requestProfile,
         false,
       );
-      appendAssistantMessage(
-        `${getCommerceReply(commerceData)}\n\n${getGuidedPlanReply(
-          planItems,
-          0,
-          language,
-        )}`,
-      );
+      appendAssistantMessage(getGuidedPlanReply(planItems, 0, language));
       setChips(getGuidedReplyChips());
       setStatus("Guided suggestions ready.");
       return;
@@ -3671,7 +3829,22 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    const preferenceMessage = buildPreferenceMessage(profile);
+    const validatedBudget = validateSidebarBudgetDraft();
+    if (validatedBudget.error) {
+      setSidebarBudgetError(validatedBudget.error);
+      return;
+    }
+
+    setSidebarBudgetError("");
+    const nextProfile = {
+      ...profile,
+      budget: validatedBudget.budget,
+    };
+    const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+      extendedPreferences,
+      nextProfile,
+    );
+    const preferenceMessage = buildPreferenceMessage(nextProfile);
     if (preferenceMessage === "Continue without context") {
       setStatus("Choose at least one preference before sending.");
       return;
@@ -3685,14 +3858,16 @@ export function KaprukaGenieApp() {
     setMessages(nextMessages);
     playChatSound("send");
     setPendingUserRequest(preferenceMessage);
+    setProfile(nextProfile);
+    setExtendedPreferences(nextExtendedPreferences);
     setIsSending(true);
     setActivityMessage(text.processing);
 
     try {
       await handleReadyMessage(
         preferenceMessage,
-        profile,
-        extendedPreferences,
+        nextProfile,
+        nextExtendedPreferences,
         true,
       );
     } catch (error) {
@@ -4212,6 +4387,7 @@ export function KaprukaGenieApp() {
       fitReasons: {},
       recommendedProducts: preservedProducts,
     });
+    syncSidebarBudgetDraft("");
     resetToolPanels();
     setStatus("Chat history cleared.");
 
@@ -5279,20 +5455,30 @@ export function KaprukaGenieApp() {
               <div className="mt-3 grid gap-3 text-sm">
                 <label className="grid gap-1 font-bold text-[#675f79]">
                   {getContextFieldLabel("budget")}
-                  <select
-                    value={profile.budget}
-                    onChange={(event) =>
-                      updateSelectedPreference("budget", event.target.value)
-                    }
-                    className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
-                  >
-                    <option value="">{getContextFieldLabel("budget")}</option>
-                    {budgetOptions.map((budget) => (
-                      <option key={budget} value={budget}>
-                        {getOptionLabel(budget)}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={sidebarBudgetMin}
+                      onChange={(event) => {
+                        setSidebarBudgetMin(event.target.value);
+                        if (sidebarBudgetError) {
+                          setSidebarBudgetError("");
+                        }
+                      }}
+                      placeholder="Min price"
+                      className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
+                    />
+                    <input
+                      value={sidebarBudgetMax}
+                      onChange={(event) => {
+                        setSidebarBudgetMax(event.target.value);
+                        if (sidebarBudgetError) {
+                          setSidebarBudgetError("");
+                        }
+                      }}
+                      placeholder="Max price"
+                      className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
+                    />
+                  </div>
                 </label>
                 <label className="grid gap-1 font-bold text-[#675f79]">
                   {getContextFieldLabel("recipient")}
@@ -5352,7 +5538,8 @@ export function KaprukaGenieApp() {
                   isSending ||
                   activeMode !== "Smart Shopping" ||
                   !(
-                    profile.budget ||
+                    sidebarBudgetMin.trim() ||
+                    sidebarBudgetMax.trim() ||
                     profile.recipient ||
                     profile.occasion ||
                     profile.category
@@ -5363,6 +5550,11 @@ export function KaprukaGenieApp() {
               >
                 {isSending ? text.sendingContext : text.sendContext}
               </button>
+              {sidebarBudgetError ? (
+                <p className="mt-2 text-xs font-semibold text-[#d13a3a]">
+                  {sidebarBudgetError}
+                </p>
+              ) : null}
             </div>
           </aside>
 
@@ -5530,7 +5722,7 @@ export function KaprukaGenieApp() {
                       type="button"
                       onClick={() => scrollProductCarousel("prev")}
                       disabled={!canScrollProductCarouselLeft}
-                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
+                      className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d] text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#2f1b52] active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show previous product"
                     >
                       <span aria-hidden="true" className="text-white">
@@ -5541,7 +5733,7 @@ export function KaprukaGenieApp() {
                       type="button"
                       onClick={() => scrollProductCarousel("next")}
                       disabled={!canScrollProductCarouselRight}
-                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
+                      className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d] text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#2f1b52] active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show next product"
                     >
                       <span aria-hidden="true" className="text-white">
