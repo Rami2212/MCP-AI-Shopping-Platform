@@ -627,6 +627,74 @@ function getNonPastDate(value: string) {
     : today;
 }
 
+function formatBudgetAmount(value: number) {
+  return new Intl.NumberFormat("en-LK", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function parseBudgetAmount(value: string) {
+  const digits = value.replace(/[^\d]/g, "");
+  if (!digits) {
+    return "";
+  }
+
+  const amount = Number(digits);
+  return Number.isFinite(amount) && amount >= 0 ? String(amount) : "";
+}
+
+function parseBudgetRangeValue(value: string) {
+  const normalized = value.trim();
+
+  if (!normalized) {
+    return { max: "", min: "" };
+  }
+
+  if (/^under\s+rs\./i.test(normalized)) {
+    return { max: parseBudgetAmount(normalized), min: "" };
+  }
+
+  if (/^(above|over)\s+rs\./i.test(normalized)) {
+    return { max: "", min: parseBudgetAmount(normalized) };
+  }
+
+  const betweenMatch = normalized.match(/rs\.\s*([\d,]+)\s*-\s*([\d,]+)/i);
+  if (betweenMatch) {
+    return {
+      max: parseBudgetAmount(betweenMatch[2]),
+      min: parseBudgetAmount(betweenMatch[1]),
+    };
+  }
+
+  return { max: "", min: parseBudgetAmount(normalized) };
+}
+
+function buildBudgetRangeValue(min: string, max: string) {
+  const normalizedMin = parseBudgetAmount(min);
+  const normalizedMax = parseBudgetAmount(max);
+
+  if (normalizedMin && normalizedMax) {
+    const minAmount = Number(normalizedMin);
+    const maxAmount = Number(normalizedMax);
+
+    if (minAmount > maxAmount) {
+      return `Rs. ${formatBudgetAmount(maxAmount)} - ${formatBudgetAmount(minAmount)}`;
+    }
+
+    return `Rs. ${formatBudgetAmount(minAmount)} - ${formatBudgetAmount(maxAmount)}`;
+  }
+
+  if (normalizedMin) {
+    return `Above Rs. ${formatBudgetAmount(Number(normalizedMin))}`;
+  }
+
+  if (normalizedMax) {
+    return `Under Rs. ${formatBudgetAmount(Number(normalizedMax))}`;
+  }
+
+  return "";
+}
+
 const initialShoppingProfile: ShoppingProfile = {
   budget: "",
   category: "",
@@ -1686,6 +1754,13 @@ export function KaprukaGenieApp() {
   const [isComposerMenuOpen, setIsComposerMenuOpen] = useState(false);
   const [isPromptPopupOpen, setIsPromptPopupOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [sidebarBudgetMin, setSidebarBudgetMin] = useState(() =>
+    parseBudgetRangeValue(initialShoppingProfile.budget).min
+  );
+  const [sidebarBudgetMax, setSidebarBudgetMax] = useState(() =>
+    parseBudgetRangeValue(initialShoppingProfile.budget).max
+  );
+  const [sidebarBudgetError, setSidebarBudgetError] = useState("");
 
   const totals = useMemo(() => {
     const subtotal = buyBox.reduce((sum, product) => sum + product.price, 0);
@@ -3122,6 +3197,47 @@ export function KaprukaGenieApp() {
     );
   }
 
+  function validateSidebarBudgetDraft() {
+    const minValue = sidebarBudgetMin.trim();
+    const maxValue = sidebarBudgetMax.trim();
+    const allowedPattern = /^[\d,\s]*$/;
+
+    if (minValue && !allowedPattern.test(minValue)) {
+      return { budget: "", error: "Min price can only contain numbers." };
+    }
+
+    if (maxValue && !allowedPattern.test(maxValue)) {
+      return { budget: "", error: "Max price can only contain numbers." };
+    }
+
+    const normalizedMin = parseBudgetAmount(minValue);
+    const normalizedMax = parseBudgetAmount(maxValue);
+
+    if (minValue && !normalizedMin) {
+      return { budget: "", error: "Enter a valid minimum price." };
+    }
+
+    if (maxValue && !normalizedMax) {
+      return { budget: "", error: "Enter a valid maximum price." };
+    }
+
+    if (
+      normalizedMin &&
+      normalizedMax &&
+      Number(normalizedMin) > Number(normalizedMax)
+    ) {
+      return {
+        budget: "",
+        error: "Minimum price cannot be greater than maximum price.",
+      };
+    }
+
+    return {
+      budget: buildBudgetRangeValue(normalizedMin, normalizedMax),
+      error: "",
+    };
+  }
+
   function addToBuyBox(product: Product) {
     setCheckoutWarning("");
     setBuyBox((current) =>
@@ -3671,7 +3787,22 @@ export function KaprukaGenieApp() {
       return;
     }
 
-    const preferenceMessage = buildPreferenceMessage(profile);
+    const validatedBudget = validateSidebarBudgetDraft();
+    if (validatedBudget.error) {
+      setSidebarBudgetError(validatedBudget.error);
+      return;
+    }
+
+    setSidebarBudgetError("");
+    const nextProfile = {
+      ...profile,
+      budget: validatedBudget.budget,
+    };
+    const nextExtendedPreferences = syncExtendedPreferencesWithProfile(
+      extendedPreferences,
+      nextProfile,
+    );
+    const preferenceMessage = buildPreferenceMessage(nextProfile);
     if (preferenceMessage === "Continue without context") {
       setStatus("Choose at least one preference before sending.");
       return;
@@ -3685,14 +3816,16 @@ export function KaprukaGenieApp() {
     setMessages(nextMessages);
     playChatSound("send");
     setPendingUserRequest(preferenceMessage);
+    setProfile(nextProfile);
+    setExtendedPreferences(nextExtendedPreferences);
     setIsSending(true);
     setActivityMessage(text.processing);
 
     try {
       await handleReadyMessage(
         preferenceMessage,
-        profile,
-        extendedPreferences,
+        nextProfile,
+        nextExtendedPreferences,
         true,
       );
     } catch (error) {
@@ -5279,20 +5412,30 @@ export function KaprukaGenieApp() {
               <div className="mt-3 grid gap-3 text-sm">
                 <label className="grid gap-1 font-bold text-[#675f79]">
                   {getContextFieldLabel("budget")}
-                  <select
-                    value={profile.budget}
-                    onChange={(event) =>
-                      updateSelectedPreference("budget", event.target.value)
-                    }
-                    className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
-                  >
-                    <option value="">{getContextFieldLabel("budget")}</option>
-                    {budgetOptions.map((budget) => (
-                      <option key={budget} value={budget}>
-                        {getOptionLabel(budget)}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={sidebarBudgetMin}
+                      onChange={(event) => {
+                        setSidebarBudgetMin(event.target.value);
+                        if (sidebarBudgetError) {
+                          setSidebarBudgetError("");
+                        }
+                      }}
+                      placeholder="Min price"
+                      className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
+                    />
+                    <input
+                      value={sidebarBudgetMax}
+                      onChange={(event) => {
+                        setSidebarBudgetMax(event.target.value);
+                        if (sidebarBudgetError) {
+                          setSidebarBudgetError("");
+                        }
+                      }}
+                      placeholder="Max price"
+                      className="rounded-[14px] border border-[#e8e2f2] bg-white px-3 py-2 text-[#161226] outline-none"
+                    />
+                  </div>
                 </label>
                 <label className="grid gap-1 font-bold text-[#675f79]">
                   {getContextFieldLabel("recipient")}
@@ -5352,7 +5495,8 @@ export function KaprukaGenieApp() {
                   isSending ||
                   activeMode !== "Smart Shopping" ||
                   !(
-                    profile.budget ||
+                    sidebarBudgetMin.trim() ||
+                    sidebarBudgetMax.trim() ||
                     profile.recipient ||
                     profile.occasion ||
                     profile.category
@@ -5363,6 +5507,11 @@ export function KaprukaGenieApp() {
               >
                 {isSending ? text.sendingContext : text.sendContext}
               </button>
+              {sidebarBudgetError ? (
+                <p className="mt-2 text-xs font-semibold text-[#d13a3a]">
+                  {sidebarBudgetError}
+                </p>
+              ) : null}
             </div>
           </aside>
 
