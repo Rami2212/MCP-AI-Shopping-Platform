@@ -15,7 +15,7 @@ import {
 
 export const runtime = "nodejs";
 
-const DEFAULT_MODEL = "qwen/qwen3-32b";
+const DEFAULT_MODEL = "openai/gpt-oss-120b";
 const MAX_CONTEXT_MESSAGES = 10;
 type SelectedLanguage = "English" | "Sinhala" | "Singlish" | "Tanglish";
 

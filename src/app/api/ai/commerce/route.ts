@@ -242,12 +242,39 @@ type CommerceResponse = {
   };
   chips: string[];
   eventPlan: string[];
+  eventUserPreference?: ExtendedPreferences;
+  extendedPreferences?: ExtendedPreferences;
   giftMessage: string;
+  giftUserPreference?: ExtendedPreferences;
   mode: string;
   recommendations: CommerceRecommendation[];
   reply: string;
   tracking: string;
 };
+
+function getSubmittedPreferenceRecord(bodyRecord: Record<string, unknown> | null | undefined, mode: string) {
+  if (mode.includes("Event")) {
+    return bodyRecord?.eventUserPreference ?? bodyRecord?.extendedPreferences;
+  }
+
+  if (mode.includes("Gift Box")) {
+    return bodyRecord?.giftUserPreference ?? bodyRecord?.extendedPreferences;
+  }
+
+  return bodyRecord?.extendedPreferences;
+}
+
+function getPreferenceResponseForMode(mode: string, preferences: ExtendedPreferences) {
+  if (mode.includes("Event")) {
+    return { eventUserPreference: preferences };
+  }
+
+  if (mode.includes("Gift Box")) {
+    return { giftUserPreference: preferences };
+  }
+
+  return { extendedPreferences: preferences };
+}
 
 type CheckoutDetails = {
   address?: string;
@@ -2248,7 +2275,7 @@ export async function POST(request: Request) {
   );
   const profile = parseProfile(bodyRecord?.profile);
   const submittedExtendedPreferences = parseExtendedPreferences(
-    bodyRecord?.extendedPreferences,
+    getSubmittedPreferenceRecord(bodyRecord, mode),
     profile,
   );
   const checkout = parseCheckoutDetails(bodyRecord?.checkout);
@@ -2679,10 +2706,10 @@ export async function POST(request: Request) {
         ],
       },
       products: responseProducts,
-      extendedPreferences: effectiveExtendedPreferences,
       preferences: getClientPreferences(replyPreferenceProfile),
       recommendations,
       reply: commerce.reply,
+      ...getPreferenceResponseForMode(mode, effectiveExtendedPreferences),
     });
   } catch (error) {
     return NextResponse.json(
