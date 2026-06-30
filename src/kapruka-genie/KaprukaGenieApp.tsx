@@ -5530,7 +5530,7 @@ export function KaprukaGenieApp() {
                       type="button"
                       onClick={() => scrollProductCarousel("prev")}
                       disabled={!canScrollProductCarouselLeft}
-                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
+                      className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d] text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#2f1b52] active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show previous product"
                     >
                       <span aria-hidden="true" className="text-white">
@@ -5541,7 +5541,7 @@ export function KaprukaGenieApp() {
                       type="button"
                       onClick={() => scrollProductCarousel("next")}
                       disabled={!canScrollProductCarouselRight}
-                      className="pointer-events-auto grid h-11 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d]/72 text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#3f246d]/86 active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
+                      className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-white/55 bg-[#3f246d] text-transparent text-lg font-black shadow-[0_14px_28px_rgba(26,15,46,0.22)] backdrop-blur-sm transition hover:scale-105 hover:bg-[#2f1b52] active:scale-95 disabled:cursor-default disabled:border-white/40 disabled:bg-[#cfc8dd]/72 disabled:opacity-100 disabled:hover:scale-100"
                       aria-label="Show next product"
                     >
                       <span aria-hidden="true" className="text-white">
